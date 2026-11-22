@@ -183,6 +183,7 @@ config CPU_SH4
 config CPU_SH4A
 	bool
 	select CPU_SH4
+	select CPU_HAS_PMB if !CPU_SH4AL_DSP
 
 config CPU_SH4AL_DSP
 	bool
@@ -381,6 +382,17 @@ config CPU_SUBTYPE_SH7760
 	bool "Support SH7760 processor"
 	select CPU_SH4
 
+config CPU_SUBTYPE_ST40
+	bool "Support ST40-300 processor"
+	select CPU_SH4
+	select CPU_HAS_PMB
+	select COMMON_CLK
+	help
+	  Select ST40-300 if you have an STMicroelectronics ST40-300
+	  core, as used by the STi7105. It implements the SH-4 ISA and
+	  has a PMB, but it is not an SH-4A and must not be built with
+	  the SH-4A instruction set.
+
 # SH-4A Processor Support
 
 config CPU_SUBTYPE_SH7723
@@ -518,7 +530,7 @@ config SH_CLK_CPG_LEGACY
 	def_bool y if !CPU_SUBTYPE_SH7785 && !ARCH_SHMOBILE && \
 		      !CPU_SHX3 && !CPU_SUBTYPE_SH7757 && \
 		      !CPU_SUBTYPE_SH7734 && !CPU_SUBTYPE_SH7264 && \
-		      !CPU_SUBTYPE_SH7269
+		      !CPU_SUBTYPE_SH7269 && !CPU_SUBTYPE_ST40
 
 endmenu
 

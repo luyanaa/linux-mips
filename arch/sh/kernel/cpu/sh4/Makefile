@@ -24,9 +24,12 @@ obj-$(CONFIG_CPU_SUBTYPE_SH7751)	+= setup-sh7750.o
 obj-$(CONFIG_CPU_SUBTYPE_SH7751R)	+= setup-sh7750.o
 obj-$(CONFIG_CPU_SUBTYPE_SH7760)	+= setup-sh7760.o
 
-# Primary on-chip clocks (common)
+# Primary on-chip clocks (common). SH-4A has its own clock files.
+# CCF users, such as the ST40, must not build this legacy FRQCR driver.
+ifeq ($(CONFIG_COMMON_CLK),)
 ifndef CONFIG_CPU_SH4A
 clock-$(CONFIG_CPU_SH4)			:= clock-sh4.o
+endif
 endif
 
 obj-y					+= $(clock-y)

@@ -286,7 +286,12 @@ ENTRY(_stext)
 	 add	r4, r3		/* Increment to the next PMB_ADDR entry */
 
 	mov.l	6f, r0
+#ifdef CONFIG_CPU_SH4A
 	icbi	@r0
+#else
+	nop; nop; nop; nop
+	nop; nop; nop; nop
+#endif
 
 .Lpmb_done:
 #endif /* CONFIG_PMB */

@@ -87,13 +87,13 @@ config 32BIT
 
 config PMB
 	bool "Support 32-bit physical addressing through PMB"
-	depends on MMU && CPU_SH4A && !CPU_SH4AL_DSP
+	depends on MMU && CPU_HAS_PMB
 	select 32BIT
 	select UNCACHED_MAPPING
 	help
 	  If you say Y here, physical addressing will be extended to
-	  32-bits through the SH-4A PMB. If this is not set, legacy
-	  29-bit physical addressing will be used.
+	  32-bits through the PMB. If this is not set, legacy 29-bit
+	  physical addressing will be used.
 
 config X2TLB
 	def_bool y

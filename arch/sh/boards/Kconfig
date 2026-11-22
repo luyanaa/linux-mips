@@ -9,7 +9,7 @@ config SH_ALPHA_BOARD
 
 config SH_CUSTOM_CLK
 	def_bool y
-	depends on !SH_DEVICE_TREE
+	depends on !SH_DEVICE_TREE && !CPU_SUBTYPE_ST40
 	select HAVE_LEGACY_CLK
 
 config SH_DEVICE_TREE

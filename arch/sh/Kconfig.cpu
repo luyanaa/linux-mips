@@ -97,4 +97,11 @@ config CPU_HAS_DSP
 config CPU_HAS_FPU
 	bool
 
+config CPU_HAS_PMB
+	bool
+	help
+	  This CPU has a Privileged Mapping Buffer and can do 32-bit
+	  physical addressing through it. SH-4A parts have one, except
+	  the SH4AL-DSP. The ST40-300 has one but is not an SH-4A.
+
 endmenu
