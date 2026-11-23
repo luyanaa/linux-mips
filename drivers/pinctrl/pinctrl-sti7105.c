@@ -268,6 +268,26 @@ int sti7105_pio_config(unsigned int bank, unsigned int pin,
 EXPORT_SYMBOL_GPL(sti7105_pio_config);
 
 /*
+ * Set the direction and leave the alternate function alone. The old
+ * pad code does this for an input whose function is -1: it never
+ * writes the sysconf planes. The infrared input is one of those.
+ */
+int sti7105_pio_direction(unsigned int bank, unsigned int pin,
+			  unsigned int mode)
+{
+	struct sti7105_pio *pio = READ_ONCE(sti7105_pio_dev);
+
+	if (!pio)
+		return -EPROBE_DEFER;
+	if (bank >= PDK7105_PIO_BANKS || pin > 7)
+		return -EINVAL;
+
+	sti7105_pio_mode(pio, STI7105_PIO_PIN(bank, pin), mode);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sti7105_pio_direction);
+
+/*
  * Drive a pin that sti7105_pio_config() already made a GPIO output.
  * gpio_request() is not used: requesting a GPIO clears the alternate
  * function, which is wrong for a pin that only needs its level set.

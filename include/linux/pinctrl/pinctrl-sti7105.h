@@ -13,6 +13,10 @@
 int sti7105_pio_config(unsigned int bank, unsigned int pin,
 		       unsigned int function, unsigned int mode);
 
+/* Direction only. The alternate-function planes are left as they are. */
+int sti7105_pio_direction(unsigned int bank, unsigned int pin,
+			  unsigned int mode);
+
 /* Drive one pin. The pin must already be a GPIO output. */
 int sti7105_pio_set(unsigned int bank, unsigned int pin, int value);
 

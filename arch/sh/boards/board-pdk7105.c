@@ -700,13 +700,16 @@ device_initcall(pdk7105_gmac_register);
  * 100 MHz comms clock. There is no device tree, so the driver takes
  * infrared rather than UHF when no rx-mode property exists.
  *
- * PIO3.0 is the infrared input and PIO3.2/PIO3.3 are the transmitter
- * outputs. None of them is muxed: the alternate function of the input
- * is not known, and transmission is not used.
+ * PIO3.0 is the infrared input. The old driver sets its direction
+ * and, because the function it was given is -1, does not touch the
+ * alternate-function planes, so this does the same. PIO3.2 and PIO3.3
+ * are the transmitter outputs and stay untouched.
  */
 #define PDK7105_IRB_BASE	0xfd018000
 #define PDK7105_IRB_SIZE	0x234
 #define PDK7105_IRB_EVT		0x11a0
+#define PDK7105_IRB_RX_BANK	3
+#define PDK7105_IRB_RX_PIN	0
 
 static struct resource pdk7105_irb_resources[] = {
 	DEFINE_RES_MEM(PDK7105_IRB_BASE, PDK7105_IRB_SIZE),
@@ -722,6 +725,13 @@ static struct platform_device pdk7105_irb_device = {
 
 static int __init pdk7105_irb_register(void)
 {
+	int ret;
+
+	ret = sti7105_pio_direction(PDK7105_IRB_RX_BANK, PDK7105_IRB_RX_PIN,
+				    STI7105_PIO_IN);
+	if (ret)
+		return ret;
+
 	pdk7105_usb_set_irq(&pdk7105_irb_resources[1], PDK7105_IRB_EVT);
 
 	return platform_device_register(&pdk7105_irb_device);
