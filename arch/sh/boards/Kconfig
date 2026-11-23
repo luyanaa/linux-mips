@@ -131,8 +131,10 @@ config SH_PDK7105
 	help
 	  STMicroelectronics PDK7105, the STi7105 board used by the
 	  网乐通 set-top box. U-Boot loads a uImage at 0x80800000 and
-	  the kernel console is ASC2, exposed as ttyAS0. USB storage,
-	  SATA, PCI and the video blocks come in later phases.
+	  the kernel console is ASC2, exposed as ttyAS0. The onboard
+	  USB port is registered before the front port so a stick
+	  comes up as sda. SATA, PCI and the video blocks come in
+	  later phases.
 
 config SH_DREAMCAST
 	bool "Dreamcast"
