@@ -68,6 +68,15 @@ config ARM_VIC
 	bool
 	select IRQ_DOMAIN
 
+config STI7105_ILC3
+	bool "STi7105 interrupt level controller"
+	depends on CPU_SUBTYPE_ST40 || COMPILE_TEST
+	select IRQ_DOMAIN
+	default y if CPU_SUBTYPE_ST40
+	help
+	  Demux for the STi7105 ILC3. Its fifteen outputs are INTC2
+	  events 0x200 to 0x3c0; the inputs are Linux IRQs from 176.
+
 config ARM_VIC_NR
 	int
 	default 4 if ARCH_S5PV210

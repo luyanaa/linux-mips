@@ -4,16 +4,20 @@
  *
  * U-Boot has already programmed the PMB so that cached RAM at 0x80800000
  * reaches physical 0x40800000, and has left ASC2 running at 115200 8n1.
- * This file keeps that console: ASC2 is ttyAS0, its baud clock is the
- * fixed 100 MHz comms clock, and the TMU keeps running from the fixed
- * 66 MHz clock. Clockgen A replaces both in a later phase.
+ * This file keeps that console: ASC2 is ttyAS0. Clockgen A is read
+ * back and supplies the 100 MHz comms clock; if it cannot be mapped,
+ * the fixed 100 MHz clock stays. The TMU keeps the fixed 66 MHz
+ * clock, which is not a Clockgen A output.
  *
  * The two USB host ports are powered up and registered here too. Port 0
  * is the onboard port and comes first, so a stick in it is enumerated
  * before the front port exists and becomes sda.
  */
 #include <linux/clk-provider.h>
+#include <linux/clk.h>
 #include <linux/clkdev.h>
+#include <linux/clk/stx7105.h>
+#include <linux/errno.h>
 #include <linux/completion.h>
 #include <linux/ctype.h>
 #include <linux/delay.h>
@@ -23,11 +27,16 @@
 #include <linux/if.h>
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/pgtable.h>
 #include <linux/kstrtox.h>
 #include <linux/netdevice.h>
 #include <linux/net_namespace.h>
 #include <linux/notifier.h>
+#include <linux/pinctrl/pinctrl-sti7105.h>
 #include <linux/platform_device.h>
+#include <linux/soc/sti/sti7105-sysconf.h>
+#include <mach/pdk7105.h>
+#include <asm/mmu.h>
 #include <linux/rtnetlink.h>
 #include <linux/sh_intc.h>
 #include <linux/string.h>
@@ -40,24 +49,23 @@
 #define PDK7105_ASC2_BASE	0xfd032000
 #define PDK7105_ASC2_EVT	0x1120
 
-/* Clockgen A outputs used before that clockgen has a driver. */
+/*
+ * The TMU is not a Clockgen A output. CLKA_PCI runs at this rate, but
+ * the old kernel and U-Boot both timed the UART from 100 MHz and the
+ * timer from this fixed value, so it stays until a measurement says
+ * otherwise.
+ */
 #define PDK7105_TMU_HZ		66666666
 #define PDK7105_COMMS_HZ	100000000
 
-/* Sysconf page, shared with INTC2. SYS_STA base is 0x008, SYS_CFG 0x100. */
-#define PDK7105_SYSCONF_BASE	0xfe001000
-#define PDK7105_SYSCONF_SIZE	0x400
-#define PDK7105_SYS_STA15	0x044
-#define PDK7105_SYS_CFG04	0x110
-#define PDK7105_SYS_CFG32	0x180
-#define PDK7105_SYS_CFG34	0x188
+/* USB power and overcurrent fields, in the sysconf page. */
+#define PDK7105_SYS_STA15	STI7105_SYSCONF_STA(15)
+#define PDK7105_SYS_CFG04	STI7105_SYSCONF_CFG(4)
+#define PDK7105_SYS_CFG32	STI7105_SYSCONF_CFG(32)
 
-/* PIO4. */
-#define PDK7105_PIO4_BASE	0xfd024000
-#define PDK7105_PIO4_SIZE	0x100
-#define PDK7105_PC0		0x20
-#define PDK7105_PC1		0x30
-#define PDK7105_PC2		0x40
+/* Both USB ports use PIO4, alternate function 4. */
+#define PDK7105_USB_PIO_BANK	4
+#define PDK7105_USB_PIO_FN	4
 
 /* USB host wrapper, protocol and controller windows. */
 struct pdk7105_usb_port {
@@ -185,30 +193,6 @@ static struct platform_device pdk7105_ohci1_device =
 	PDK7105_OHCI_DEV(1, pdk7105_ohci1_resources);
 
 static void __iomem *pdk7105_sysconf;
-static void __iomem *pdk7105_pio4;
-
-/*
- * Each direction bit is written through its own set or clear register,
- * so the three PC registers need not be read back.
- */
-static void pdk7105_pio_mode(unsigned int pin, unsigned int mode)
-{
-	writel(BIT(pin), pdk7105_pio4 + PDK7105_PC0 +
-	       ((mode & 1) ? 4 : 8));
-	writel(BIT(pin), pdk7105_pio4 + PDK7105_PC1 +
-	       ((mode & 2) ? 4 : 8));
-	writel(BIT(pin), pdk7105_pio4 + PDK7105_PC2 +
-	       ((mode & 4) ? 4 : 8));
-}
-
-static void pdk7105_pio_alt4(unsigned int pin)
-{
-	u32 val;
-
-	val = readl(pdk7105_sysconf + PDK7105_SYS_CFG34);
-	val |= BIT(pin) | BIT(8 + pin);
-	writel(val, pdk7105_sysconf + PDK7105_SYS_CFG34);
-}
 
 static void pdk7105_usb_power_on(unsigned int port)
 {
@@ -235,7 +219,7 @@ static void pdk7105_usb_port_init(unsigned int port)
 	const struct pdk7105_usb_port *p = &pdk7105_usb_ports[port];
 	void __iomem *wrapper, *protocol;
 	u32 val, req;
-	int i;
+	int i, ret;
 
 	pdk7105_usb_power_on(port);
 
@@ -287,12 +271,19 @@ out_unmap:
 	iounmap(wrapper);
 
 	/*
-	 * Both pins are alternate 4. OC is an input, power is an output.
+	 * Both pins are alternate 4. OC is an input, power is a push-pull
+	 * output. The PIO driver returns -EPROBE_DEFER until it has probed,
+	 * which is earlier than this call: both are arch_initcall and the
+	 * PIO object is linked before the board file.
 	 */
-	pdk7105_pio_alt4(p->pio_oc);
-	pdk7105_pio_mode(p->pio_oc, 4);
-	pdk7105_pio_alt4(p->pio_pwr);
-	pdk7105_pio_mode(p->pio_pwr, 6);
+	ret = sti7105_pio_config(PDK7105_USB_PIO_BANK, p->pio_oc,
+				 PDK7105_USB_PIO_FN, STI7105_PIO_IN);
+	if (!ret)
+		ret = sti7105_pio_config(PDK7105_USB_PIO_BANK, p->pio_pwr,
+					 PDK7105_USB_PIO_FN, STI7105_PIO_ALT_OUT);
+	if (ret)
+		pr_warn("pdk7105: USB port %u pins not configured (%d)\n",
+			port, ret);
 }
 
 static struct completion pdk7105_usb0_done;
@@ -327,16 +318,14 @@ static void pdk7105_usb_set_irq(struct resource *res, unsigned int evt)
 
 static int __init pdk7105_usb0_init(void)
 {
-	pdk7105_sysconf = ioremap(PDK7105_SYSCONF_BASE, PDK7105_SYSCONF_SIZE);
+	/*
+	 * The sysconf driver maps the same window and stops at 0x1e0,
+	 * short of INTC2. This second mapping only reads and writes the
+	 * USB power registers; it does not request the region.
+	 */
+	pdk7105_sysconf = ioremap(STI7105_SYSCONF_PHYS, STI7105_SYSCONF_SIZE);
 	if (!pdk7105_sysconf)
 		return -ENOMEM;
-
-	pdk7105_pio4 = ioremap(PDK7105_PIO4_BASE, PDK7105_PIO4_SIZE);
-	if (!pdk7105_pio4) {
-		iounmap(pdk7105_sysconf);
-		pdk7105_sysconf = NULL;
-		return -ENOMEM;
-	}
 
 	pdk7105_usb_port_init(0);
 
@@ -535,11 +524,12 @@ device_initcall(pdk7105_apply_macs);
 
 /*
  * sh_tmu looks the clock up as "fck" on "sh-tmu.0" and divides by
- * four. st-asc takes the unnamed clock of "st-asc.0". Both are fixed
- * until Clockgen A is described.
+ * four. st-asc takes the unnamed clock of "st-asc.0".
  *
  * clk_init() calls this before late_time_init probes the TMU, so the
  * clock has to come from the machine vector rather than an initcall.
+ * Clockgen A replaces the comms clock when it can read its registers;
+ * the timer clock is not one of its outputs and stays fixed.
  */
 static int __init pdk7105_clk_init(void)
 {
@@ -550,18 +540,82 @@ static int __init pdk7105_clk_init(void)
 	if (!IS_ERR(tmu))
 		clk_hw_register_clkdev(tmu, "fck", "sh-tmu.0");
 
-	comms = clk_hw_register_fixed_rate(NULL, "comms_clk", NULL, 0,
-					   PDK7105_COMMS_HZ);
-	if (!IS_ERR(comms))
-		clk_hw_register_clkdev(comms, NULL, "st-asc.0");
+	if (stx7105_clkgena_init()) {
+		comms = clk_hw_register_fixed_rate(NULL, "comms_clk", NULL, 0,
+						   PDK7105_COMMS_HZ);
+		if (!IS_ERR(comms))
+			clk_hw_register_clkdev(comms, NULL, "st-asc.0");
+	}
 
 	return 0;
 }
+
+static struct resource pdk7105_sysconf_resource[] = {
+	DEFINE_RES_MEM(STI7105_SYSCONF_PHYS, STI7105_SYSCONF_SIZE),
+};
+
+static struct platform_device pdk7105_sysconf_device = {
+	.name		= "sti7105-sysconf",
+	.id		= -1,
+	.resource	= pdk7105_sysconf_resource,
+	.num_resources	= ARRAY_SIZE(pdk7105_sysconf_resource),
+};
+
+/*
+ * The PIO driver maps each bank from PDK7105_PIO_BASE() itself. The
+ * resource only has to exist; bank 0's window names the device.
+ */
+static struct resource pdk7105_pio_resource[] = {
+	DEFINE_RES_MEM(0xfd020000, 0x1000),
+};
+
+static struct platform_device pdk7105_pio_device = {
+	.name		= "sti7105-pio",
+	.id		= -1,
+	.resource	= pdk7105_pio_resource,
+	.num_resources	= ARRAY_SIZE(pdk7105_pio_resource),
+};
+
+static struct resource pdk7105_ilc_resource[] = {
+	DEFINE_RES_MEM(PDK7105_ILC_PHYS, PDK7105_ILC_SIZE),
+};
+
+static struct platform_device pdk7105_ilc_device = {
+	.name		= "sti7105-ilc3",
+	.id		= -1,
+	.resource	= pdk7105_ilc_resource,
+	.num_resources	= ARRAY_SIZE(pdk7105_ilc_resource),
+};
+
+/*
+ * One 16 MB page of the PCI region, at the address U-Boot used. A
+ * 512 MB window does not fit below P3SEG. The bolt happens from a
+ * device_initcall, which is after pmb_init() has dropped every
+ * bootloader entry whose physical page is outside RAM and has shrunk
+ * the uncached alias to 16 MB. That alias follows RAM and ends well
+ * below 0xa7000000, so the two do not overlap.
+ */
+static int __init pdk7105_pmb_init(void)
+{
+	int ret;
+
+	ret = pmb_bolt_mapping(PDK7105_PCI_MEM_VIRT, PDK7105_PCI_MEM_PHYS,
+			       PDK7105_PCI_MEM_SIZE, PAGE_KERNEL_NOCACHE);
+	if (ret)
+		pr_warn("pdk7105: PCI window not bolted (%d)\n", ret);
+
+	return 0;
+}
+device_initcall(pdk7105_pmb_init);
 
 static int __init pdk7105_devices_setup(void)
 {
 	asc2_resources[1].start = evt2irq(PDK7105_ASC2_EVT);
 	asc2_resources[1].end = asc2_resources[1].start;
+
+	platform_device_register(&pdk7105_sysconf_device);
+	platform_device_register(&pdk7105_pio_device);
+	platform_device_register(&pdk7105_ilc_device);
 
 	return platform_device_register(&asc2_device);
 }

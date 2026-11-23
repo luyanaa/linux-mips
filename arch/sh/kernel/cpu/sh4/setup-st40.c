@@ -69,6 +69,15 @@ enum {
 	OHCI0, EHCI0, TVO_DCS1, BDISP_CQ,
 
 	GROUP15,
+
+	/*
+	 * ILC3 outputs. These events have no bit in any INTMSK word: the
+	 * ILC gates its own inputs. The names exist so the demux can chain
+	 * off the Linux IRQs, and so intc_register_irq() has a mask slot.
+	 * That slot is a word this file owns and never writes back.
+	 */
+	ILC0, ILC1, ILC2, ILC3, ILC4, ILC5, ILC6, ILC7,
+	ILC8, ILC9, ILC10, ILC11, ILC12, ILC13, ILC14,
 };
 
 static struct intc_vect vectors[] __initdata = {
@@ -80,6 +89,20 @@ static struct intc_vect vectors[] __initdata = {
 
 	INTC_VECT(OHCI1, 0x13c0), INTC_VECT(EHCI1, 0x13e0),
 	INTC_VECT(OHCI0, 0x1700), INTC_VECT(EHCI0, 0x1720),
+
+	/*
+	 * Fifteen of the sixteen ILC3 outputs. The hardware has one more,
+	 * at 0x3e0, and it is not wired. The entry path rejects an event
+	 * below 0x200, so 0x200 is the lowest vector that reaches do_IRQ().
+	 */
+	INTC_VECT(ILC0, 0x200), INTC_VECT(ILC1, 0x220),
+	INTC_VECT(ILC2, 0x240), INTC_VECT(ILC3, 0x260),
+	INTC_VECT(ILC4, 0x280), INTC_VECT(ILC5, 0x2a0),
+	INTC_VECT(ILC6, 0x2c0), INTC_VECT(ILC7, 0x2e0),
+	INTC_VECT(ILC8, 0x300), INTC_VECT(ILC9, 0x320),
+	INTC_VECT(ILC10, 0x340), INTC_VECT(ILC11, 0x360),
+	INTC_VECT(ILC12, 0x380), INTC_VECT(ILC13, 0x3a0),
+	INTC_VECT(ILC14, 0x3c0),
 };
 
 static struct intc_group groups[] __initdata = {
@@ -99,6 +122,19 @@ static struct intc_prio_reg prio_registers[] __initdata = {
 	{ STX7105_INTPRI04, 0, 32, 4, { GROUP8, 0, 0, 0, 0, GROUP3, 0, 0 } },
 	{ STX7105_INTPRI08, 0, 32, 4, { 0, GROUP15, 0, 0, 0, 0, 0, 0 } },
 };
+
+/*
+ * Shadow of the ILC output mask. Not __initdata: its address is taken
+ * from the __initdata mask table, which a static initializer may not do
+ * for an __initdata object. It has to be defined before that table,
+ * since a static initializer cannot refer to a static further down.
+ *
+ * register_intc_controller() reads a mask register back while the
+ * sources are still disabled, and refuses to come up if that read is
+ * all ones. The ILC outputs have no hardware mask, so the word starts
+ * clear and the core's read-modify-write of it is the whole mask.
+ */
+static u32 stx7105_ilc_mask = 0xffffffff;
 
 static struct intc_mask_reg mask_registers[] __initdata = {
 	{ STX7105_INTMSK00, STX7105_INTMSKCLR00, 32,
@@ -122,6 +158,19 @@ static struct intc_mask_reg mask_registers[] __initdata = {
 	  /* 23..0 */
 	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+
+	/*
+	 * ILC outputs have no INTMSK bit. intc_register_irq() refuses a
+	 * source with neither a mask nor a priority slot, so each output
+	 * is given a bit in this word. Only the set address is filled in,
+	 * which makes the core read-modify-write it; the word is private
+	 * and is never stored to a register. Bits run from the top, so
+	 * ILC0 is bit 31.
+	 */
+	{ (unsigned long)&stx7105_ilc_mask, 0, 32,
+	  { ILC0, ILC1, ILC2, ILC3, ILC4, ILC5, ILC6, ILC7,
+	    ILC8, ILC9, ILC10, ILC11, ILC12, ILC13, ILC14, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
 };
 
 static DECLARE_INTC_DESC(intc_desc, "stx7105", vectors, groups,

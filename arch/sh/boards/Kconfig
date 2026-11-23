@@ -128,6 +128,9 @@ config SH_HP6XX
 config SH_PDK7105
 	bool "ST PDK7105 (STi7105)"
 	depends on CPU_SUBTYPE_ST40
+	select PINCTRL_STI7105
+	select STI7105_SYSCONF
+	select STI7105_ILC3
 	help
 	  STMicroelectronics PDK7105, the STi7105 board used by the
 	  网乐通 set-top box. U-Boot loads a uImage at 0x80800000 and

@@ -579,6 +579,17 @@ config PINCTRL_ST
 	select PINCONF
 	select GPIOLIB_IRQCHIP
 
+config PINCTRL_STI7105
+	bool "STi7105 pin controller"
+	depends on CPU_SUBTYPE_ST40 || COMPILE_TEST
+	depends on GPIOLIB
+	select PINMUX
+	default y if CPU_SUBTYPE_ST40
+	help
+	  17 PIO banks of the STi7105. Alternate functions are programmed
+	  through the sysconf block, not through this controller's own
+	  registers.
+
 config PINCTRL_STMFX
 	tristate "STMicroelectronics STMFX GPIO expander pinctrl driver"
 	depends on OF

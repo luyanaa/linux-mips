@@ -166,6 +166,10 @@ obj-y					+= spacemit/
 obj-$(CONFIG_PLAT_SPEAR)		+= spear/
 obj-y					+= sprd/
 obj-$(CONFIG_ARCH_STI)			+= st/
+# The STi7105 clock driver lives in st/ but CONFIG_ARCH_STI is a
+# different SoC. Pull the directory in for the ST40 as well; its
+# Makefile only builds clk-stx7105.o in that case, not the flexgen.
+obj-$(CONFIG_CPU_SUBTYPE_ST40)		+= st/
 obj-$(CONFIG_COMMON_CLK_STM32MP)	+= stm32/
 obj-y					+= starfive/
 obj-$(CONFIG_ARCH_SUNXI)		+= sunxi/

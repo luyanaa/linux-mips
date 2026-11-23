@@ -387,6 +387,8 @@ config CPU_SUBTYPE_ST40
 	select CPU_SH4
 	select CPU_HAS_PMB
 	select COMMON_CLK
+	select GPIOLIB
+	select PINCTRL
 	help
 	  Select ST40-300 if you have an STMicroelectronics ST40-300
 	  core, as used by the STi7105. It implements the SH-4 ISA and
