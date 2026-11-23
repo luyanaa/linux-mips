@@ -193,6 +193,36 @@ void cpu_probe(void)
 		boot_cpu_data.dcache.ways = 2;
 
 		break;
+	case 0x9090 ... 0x9094: {
+		unsigned long prr_all = __raw_readl(CCN_PRR);
+		unsigned long ramcr = __raw_readl(CCN_RAMCR);
+
+		/*
+		 * ST40-300. The high byte of PVR is 0x90, not the 0x10 that
+		 * marks an SH-4A, so this must stay out of the SH-4A path
+		 * above: the core has no movli.l/movco.l.
+		 *
+		 * Only the STi7105 cuts are recognised. 0x0010 is cut 1.0;
+		 * cut 2.0 is 0x9e20 and the rest of that range is the same
+		 * die. Other ST40-300 SoCs share this PVR and are left as
+		 * CPU_SH_NONE so cpu_init panics instead of guessing.
+		 */
+		switch (prr_all) {
+		case 0x0010:
+		case 0x9e00 ... 0x9eff:
+			boot_cpu_data.type = CPU_ST40;
+			break;
+		default:
+			break;
+		}
+
+		boot_cpu_data.flags |= CPU_HAS_FPU;
+		boot_cpu_data.flags &= ~CPU_HAS_PTEA;
+		/* RAMCR bit 7/6 selects 2 ways; clear selects 4. */
+		boot_cpu_data.icache.ways = (ramcr & (1 << 7)) ? 2 : 4;
+		boot_cpu_data.dcache.ways = (ramcr & (1 << 6)) ? 2 : 4;
+		break;
+	}
 	}
 
 	/*

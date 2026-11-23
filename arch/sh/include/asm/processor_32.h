@@ -19,6 +19,8 @@
 #define CCN_PVR		0xff000030
 #define CCN_CVR		0xff000040
 #define CCN_PRR		0xff000044
+/* ST40-300 cache-way configuration. Not present on other SH-4s. */
+#define CCN_RAMCR	0xff000074
 
 /*
  * User space process size: 2GB.

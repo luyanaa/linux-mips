@@ -125,6 +125,15 @@ config SH_HP6XX
 	  More information (hardware only) at
 	  <http://www.hp.com/jornada/>.
 
+config SH_PDK7105
+	bool "ST PDK7105 (STi7105)"
+	depends on CPU_SUBTYPE_ST40
+	help
+	  STMicroelectronics PDK7105, the STi7105 board used by the
+	  网乐通 set-top box. U-Boot loads a uImage at 0x80800000 and
+	  the kernel console is ASC2, exposed as ttyAS0. USB storage,
+	  SATA, PCI and the video blocks come in later phases.
+
 config SH_DREAMCAST
 	bool "Dreamcast"
 	select HAVE_PCI

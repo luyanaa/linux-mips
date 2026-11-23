@@ -585,7 +585,7 @@ static void asc_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	uart_port_unlock_irqrestore(port, flags);
 
-	if (toggle_rts) {
+	if (toggle_rts && ascport->pinctrl) {
 		if (manual_rts) {
 			pinctrl_select_state(ascport->pinctrl,
 					     ascport->states[NO_HW_FLOWCTRL]);
@@ -718,11 +718,18 @@ static int asc_init_port(struct asc_port *ascport,
 	WARN_ON(ascport->port.uartclk == 0);
 	clk_disable_unprepare(ascport->clk);
 
+	/*
+	 * Pinctrl is optional. A board whose bootloader already muxed the
+	 * pins, or which has no pinctrl driver yet, probes without it.
+	 * Hardware flow control needs the "no-hw-flowctrl" state, so it
+	 * stays unavailable until pinctrl can supply one.
+	 */
 	ascport->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(ascport->pinctrl)) {
-		ret = PTR_ERR(ascport->pinctrl);
-		dev_err(&pdev->dev, "Failed to get Pinctrl: %d\n", ret);
-		return ret;
+		ascport->pinctrl = NULL;
+		ascport->states[DEFAULT] = NULL;
+		ascport->states[NO_HW_FLOWCTRL] = NULL;
+		return 0;
 	}
 
 	ascport->states[DEFAULT] =
@@ -748,8 +755,21 @@ static struct asc_port *asc_of_get_asc_port(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	int id;
 
-	if (!np)
-		return NULL;
+	/*
+	 * Non-DT platform devices number themselves. id 0 is ttyAS0, which
+	 * is the port U-Boot hands to the kernel on the STi7105 boards.
+	 */
+	if (!np) {
+		id = pdev->id;
+		if (id < 0)
+			id = 0;
+		if (WARN_ON(id >= ASC_MAX_PORTS))
+			return NULL;
+
+		asc_ports[id].port.line = id;
+		asc_ports[id].rts = NULL;
+		return &asc_ports[id];
+	}
 
 	id = of_alias_get_id(np, "serial");
 	if (id < 0)
@@ -938,7 +958,9 @@ static struct platform_driver asc_serial_driver = {
 	.driver	= {
 		.name	= DRIVER_NAME,
 		.pm	= pm_sleep_ptr(&asc_serial_pm_ops),
-		.of_match_table = of_match_ptr(asc_match),
+#ifdef CONFIG_OF
+		.of_match_table = asc_match,
+#endif
 	},
 };
 
