@@ -694,6 +694,41 @@ static int __init pdk7105_gmac_register(void)
 device_initcall(pdk7105_gmac_register);
 
 /*
+ * On-chip IRB, the infrared receiver. st-rc looks the device up as
+ * "st-rc" and takes the first memory and the first IRQ resource.
+ * The clock is the unnamed clock of "st-rc.0", registered with the
+ * 100 MHz comms clock. There is no device tree, so the driver takes
+ * infrared rather than UHF when no rx-mode property exists.
+ *
+ * PIO3.0 is the infrared input and PIO3.2/PIO3.3 are the transmitter
+ * outputs. None of them is muxed: the alternate function of the input
+ * is not known, and transmission is not used.
+ */
+#define PDK7105_IRB_BASE	0xfd018000
+#define PDK7105_IRB_SIZE	0x234
+#define PDK7105_IRB_EVT		0x11a0
+
+static struct resource pdk7105_irb_resources[] = {
+	DEFINE_RES_MEM(PDK7105_IRB_BASE, PDK7105_IRB_SIZE),
+	DEFINE_RES_IRQ(0),
+};
+
+static struct platform_device pdk7105_irb_device = {
+	.name		= "st-rc",
+	.id		= 0,
+	.resource	= pdk7105_irb_resources,
+	.num_resources	= ARRAY_SIZE(pdk7105_irb_resources),
+};
+
+static int __init pdk7105_irb_register(void)
+{
+	pdk7105_usb_set_irq(&pdk7105_irb_resources[1], PDK7105_IRB_EVT);
+
+	return platform_device_register(&pdk7105_irb_device);
+}
+device_initcall(pdk7105_irb_register);
+
+/*
  * sh_tmu looks the clock up as "fck" on "sh-tmu.0" and divides by
  * four. st-asc takes the unnamed clock of "st-asc.0".
  *
@@ -714,8 +749,10 @@ static int __init pdk7105_clk_init(void)
 	if (stx7105_clkgena_init()) {
 		comms = clk_hw_register_fixed_rate(NULL, "comms_clk", NULL, 0,
 						   PDK7105_COMMS_HZ);
-		if (!IS_ERR(comms))
+		if (!IS_ERR(comms)) {
 			clk_hw_register_clkdev(comms, NULL, "st-asc.0");
+			clk_hw_register_clkdev(comms, NULL, "st-rc.0");
+		}
 	}
 
 	return 0;

@@ -5,9 +5,9 @@
  * The on-chip INTC2 has far more sources than intc_enum can name: that
  * type is an unsigned char, and the full STi7105 table needs more than
  * 255 ids. This file therefore describes the SH-4 TMU, the ASC channels,
- * the GMAC and the two USB host groups, which is all the console, the
- * ethernet and USB storage need. Other sources are added with their
- * drivers.
+ * the IRB, the GMAC and the two USB host groups, which is all the
+ * console, the infrared receiver, the ethernet and USB storage need.
+ * Other sources are added with their drivers.
  *
  * Register addresses are the STi7105 INTC2 map. Priorities and masks for
  * the on-chip blocks live in the sysconf page at 0xfe001000; the TMU
@@ -56,6 +56,12 @@ enum {
 	UART0, UART1, UART2, UART3,
 
 	/*
+	 * INTC2 group 4. IRB is the receiver. IRB_WAKEUP, PWM and MAFE
+	 * share its priority and its mask nibble and have no vector.
+	 */
+	IRB_WAKEUP, IRB, PWM, MAFE,
+
+	/*
 	 * INTC2 group 8. FDMA0 and FDMA1 share the group and mask word
 	 * with the USB port 1 controllers but have no vector here.
 	 */
@@ -68,7 +74,7 @@ enum {
 	 */
 	TS_MERGER, GMAC, GMAC_PMT, EMPI_PCI,
 
-	GROUP3, GROUP6, GROUP8,
+	GROUP3, GROUP4, GROUP6, GROUP8,
 
 	/*
 	 * INTC2 group 15. TVO_DCS1 and BDISP_CQ share the group and mask
@@ -95,6 +101,8 @@ static struct intc_vect vectors[] __initdata = {
 
 	INTC_VECT(UART2, 0x1120),
 
+	INTC_VECT(IRB, 0x11a0),
+
 	INTC_VECT(GMAC, 0x12c0),
 
 	INTC_VECT(OHCI1, 0x13c0), INTC_VECT(EHCI1, 0x13e0),
@@ -117,6 +125,7 @@ static struct intc_vect vectors[] __initdata = {
 
 static struct intc_group groups[] __initdata = {
 	INTC_GROUP(GROUP3, UART3, UART2, UART1, UART0),
+	INTC_GROUP(GROUP4, IRB_WAKEUP, IRB, PWM, MAFE),
 	INTC_GROUP(GROUP6, EMPI_PCI, GMAC_PMT, GMAC, TS_MERGER),
 	INTC_GROUP(GROUP8, FDMA0, FDMA1, OHCI1, EHCI1),
 	INTC_GROUP(GROUP15, OHCI0, EHCI0, TVO_DCS1, BDISP_CQ),
@@ -130,7 +139,7 @@ static struct intc_prio_reg prio_registers[] __initdata = {
 
 			/* 31-28, 27-24, 23-20, 19-16, 15-12, 11-8, 7-4, 3-0 */
 	{ STX7105_INTPRI00, 0, 32, 4, { 0 } },
-	{ STX7105_INTPRI04, 0, 32, 4, { GROUP8, 0, GROUP6, 0, 0, GROUP3, 0, 0 } },
+	{ STX7105_INTPRI04, 0, 32, 4, { GROUP8, 0, GROUP6, 0, GROUP4, GROUP3, 0, 0 } },
 	{ STX7105_INTPRI08, 0, 32, 4, { 0, GROUP15, 0, 0, 0, 0, 0, 0 } },
 };
 
@@ -159,8 +168,8 @@ static struct intc_mask_reg mask_registers[] __initdata = {
 	    TS_MERGER, GMAC, GMAC_PMT, EMPI_PCI,
 	  /* 19..16 */
 	    0, 0, 0, 0,
-	  /* 15..12 */
-	    0, 0, 0, 0,
+	  /* 15..12: MAFE, PWM, IRB, IRB_WAKEUP */
+	    MAFE, PWM, IRB, IRB_WAKEUP,
 	  /* 11..8: UART0, UART1, UART2, UART3 */
 	    UART0, UART1, UART2, UART3,
 	  /* 7..0 */

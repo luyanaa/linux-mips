@@ -300,8 +300,11 @@ int __init stx7105_clkgena_init(void)
 	if (IS_ERR(cpu) || IS_ERR(comms) || IS_ERR(pci) || IS_ERR(emi))
 		return -EINVAL;
 
-	/* st-asc takes the unnamed clock of st-asc.0. */
+	/* st-asc takes the unnamed clock of st-asc.0. st-rc takes the
+	 * unnamed clock of st-rc.0, the same 100 MHz comms clock.
+	 */
 	clk_hw_register_clkdev(comms, NULL, "st-asc.0");
+	clk_hw_register_clkdev(comms, NULL, "st-rc.0");
 	clk_hw_register_clkdev(comms, "comms_clk", NULL);
 
 	pr_info("stx7105: Clockgen A osc %lu pll0 %lu pll1 %lu comms %lu\n",

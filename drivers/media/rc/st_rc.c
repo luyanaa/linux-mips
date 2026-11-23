@@ -257,8 +257,15 @@ static int st_rc_probe(struct platform_device *pdev)
 			goto err;
 		}
 
-	} else {
+	} else if (np) {
 		goto err;
+	} else {
+		/*
+		 * No device tree, so no rx-mode property. The STi7105 IRB
+		 * is an infrared receiver; UHF is a different pin and is not
+		 * selected here.
+		 */
+		rc_dev->rxuhfmode = false;
 	}
 
 	rc_dev->sys_clock = devm_clk_get(dev, NULL);
