@@ -13,4 +13,7 @@
 int sti7105_pio_config(unsigned int bank, unsigned int pin,
 		       unsigned int function, unsigned int mode);
 
+/* Drive one pin. The pin must already be a GPIO output. */
+int sti7105_pio_set(unsigned int bank, unsigned int pin, int value);
+
 #endif /* __PINCTRL_STI7105_H */

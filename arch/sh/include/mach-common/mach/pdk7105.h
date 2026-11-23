@@ -25,6 +25,7 @@
 
 /* Direction is one bit per pin in PC0, PC1 and PC2. */
 #define PDK7105_PIO_IN		4	/* high-Z input */
+#define PDK7105_PIO_OUT		2	/* GPIO push-pull output */
 #define PDK7105_PIO_ALT_OUT	6	/* alternate-function push-pull */
 
 /*

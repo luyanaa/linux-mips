@@ -27,6 +27,7 @@
 #include <linux/if.h>
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/phy.h>
 #include <linux/pgtable.h>
 #include <linux/kstrtox.h>
 #include <linux/netdevice.h>
@@ -39,6 +40,7 @@
 #include <asm/mmu.h>
 #include <linux/rtnetlink.h>
 #include <linux/sh_intc.h>
+#include <linux/stmmac.h>
 #include <linux/string.h>
 #include <linux/usb.h>
 #include <linux/usb/ehci_pdriver.h>
@@ -506,21 +508,190 @@ static int __init pdk7105_apply_macs(void)
 		if (!dev)
 			continue;
 
-		if (!is_valid_ether_addr(dev->dev_addr)) {
-			ss.ss_family = dev->type;
-			memcpy(((struct sockaddr *)&ss)->sa_data,
-			       pdk7105_macs[i].addr, ETH_ALEN);
-			rtnl_lock();
-			if (dev_set_mac_address(dev, &ss, NULL))
-				pr_warn("nwhwconf: %s: MAC not set\n", dev->name);
-			rtnl_unlock();
-		}
+		/*
+		 * Always overwrite. stmmac invents a random address when
+		 * it probes with none, and that address is valid, so a
+		 * check for an invalid one would keep the random value.
+		 */
+		ss.ss_family = dev->type;
+		memcpy(((struct sockaddr *)&ss)->sa_data,
+		       pdk7105_macs[i].addr, ETH_ALEN);
+		rtnl_lock();
+		if (dev_set_mac_address(dev, &ss, NULL))
+			pr_warn("nwhwconf: %s: MAC not set\n", dev->name);
+		rtnl_unlock();
 		dev_put(dev);
 	}
 
 	return 0;
 }
-device_initcall(pdk7105_apply_macs);
+
+/*
+ * late_initcall, not device_initcall. This file is linked from
+ * arch/sh, before drivers/, so a device_initcall here runs before
+ * dwmac-generic registers. The netdev does not exist yet, and stmmac
+ * then probes with no address and installs a random one. Level 7 is
+ * after that probe.
+ */
+late_initcall(pdk7105_apply_macs);
+
+/*
+ * On-chip GMAC0. Not a PCI device: the MAC sits at 0xfd110000 and its
+ * interrupt is INTC2 event 0x12c0, named macirq because that is the
+ * name stmmac_get_platform_resources() looks up. The platform data is
+ * consumed by dwmac-generic. core_type must be set: its zero value is
+ * the MAC100 core, not this GMAC.
+ *
+ * The PHY clock is external (the old ext_clk = 1), so PIO9.5 is left
+ * alone, and so is PIO9.7, which is the HDMI hotplug pin. MII inputs
+ * are alternate 1 with direction only; the old pad code stored -1,
+ * which selected the same function.
+ */
+#define PDK7105_GMAC_BASE	0xfd110000
+#define PDK7105_GMAC_SIZE	0x8000
+#define PDK7105_GMAC_EVT	0x12c0
+#define PDK7105_GMAC_MII_FN	1
+#define PDK7105_PHY_RESET_BANK	15
+#define PDK7105_PHY_RESET_PIN	5
+
+static struct stmmac_dma_cfg pdk7105_gmac_dma = {
+	.pbl = 32,
+};
+
+static struct stmmac_mdio_bus_data pdk7105_gmac_mdio = {
+	.phy_mask = 0,
+};
+
+static void pdk7105_gmac_fix_mac_speed(void *priv, phy_interface_t interface,
+				       int speed, unsigned int mode)
+{
+	/* SYS_CFG7 bit 20 selects 100 Mbit. 10 and 1000 leave it clear. */
+	sti7105_sysconf_write(7, 20, 20, speed == SPEED_100);
+}
+
+/*
+ * One MII pin. An input only sets the direction; the function field of
+ * the old pad table was -1 for those, which is alternate 1 here.
+ */
+struct pdk7105_mii_pin {
+	u8 bank;
+	u8 pin;
+	u8 mode;
+};
+
+static const struct pdk7105_mii_pin pdk7105_mii_pins[] = {
+	{ 7, 4, STI7105_PIO_IN },	/* RXDV */
+	{ 7, 5, STI7105_PIO_IN },	/* RXERR */
+	{ 7, 6, STI7105_PIO_ALT_OUT },	/* TXD.0 */
+	{ 7, 7, STI7105_PIO_ALT_OUT },	/* TXD.1 */
+	{ 8, 0, STI7105_PIO_ALT_OUT },	/* TXD.2 */
+	{ 8, 1, STI7105_PIO_ALT_OUT },	/* TXD.3 */
+	{ 8, 2, STI7105_PIO_ALT_OUT },	/* TXEN */
+	{ 8, 3, STI7105_PIO_ALT_OUT },	/* MDIO, driven, not bidirectional */
+	{ 8, 4, STI7105_PIO_ALT_OUT },	/* MDC */
+	{ 8, 5, STI7105_PIO_IN },	/* RXCLK */
+	{ 8, 6, STI7105_PIO_IN },	/* RXD.0 */
+	{ 8, 7, STI7105_PIO_IN },	/* RXD.1 */
+	{ 9, 0, STI7105_PIO_IN },	/* RXD.2 */
+	{ 9, 1, STI7105_PIO_IN },	/* RXD.3 */
+	{ 9, 2, STI7105_PIO_IN },	/* TXCLK */
+	{ 9, 3, STI7105_PIO_IN },	/* COL */
+	{ 9, 4, STI7105_PIO_IN },	/* CRS */
+	{ 9, 6, STI7105_PIO_IN },	/* MDINT */
+};
+
+static int pdk7105_gmac_init(struct device *dev, void *priv)
+{
+	int i, ret;
+
+	/*
+	 * SYS_CFG7: bit 16 enables the interface, bit 27 selects MII
+	 * rather than reverse MII. Bit 17 takes MDIO from the GMAC,
+	 * bit 18 stays MII rather than RMII, and bits 26:25 select
+	 * GMII/MII. Bit 20 is the speed select and is written later.
+	 */
+	sti7105_sysconf_write(7, 16, 16, 1);
+	sti7105_sysconf_write(7, 27, 27, 1);
+	sti7105_sysconf_write(7, 17, 17, 0);
+	sti7105_sysconf_write(7, 18, 18, 0);
+	sti7105_sysconf_write(7, 25, 26, 0);
+
+	for (i = 0; i < ARRAY_SIZE(pdk7105_mii_pins); i++) {
+		const struct pdk7105_mii_pin *p = &pdk7105_mii_pins[i];
+
+		ret = sti7105_pio_config(p->bank, p->pin, PDK7105_GMAC_MII_FN,
+					 p->mode);
+		if (ret) {
+			dev_warn(dev, "MII pin %u.%u not configured (%d)\n",
+				 p->bank, p->pin, ret);
+			return ret;
+		}
+	}
+
+	/* PHY reset is GPIO, not an alternate function. */
+	ret = sti7105_pio_config(PDK7105_PHY_RESET_BANK, PDK7105_PHY_RESET_PIN,
+				 0, STI7105_PIO_OUT);
+	if (ret)
+		return ret;
+	sti7105_pio_set(PDK7105_PHY_RESET_BANK, PDK7105_PHY_RESET_PIN, 0);
+	mdelay(1);
+	sti7105_pio_set(PDK7105_PHY_RESET_BANK, PDK7105_PHY_RESET_PIN, 1);
+
+	return 0;
+}
+
+static struct plat_stmmacenet_data pdk7105_gmac_data = {
+	.core_type		= DWMAC_CORE_GMAC,
+	.bus_id			= 0,
+	.phy_addr		= -1,
+	.phy_interface		= PHY_INTERFACE_MODE_MII,
+	.mdio_bus_data		= &pdk7105_gmac_mdio,
+	.dma_cfg		= &pdk7105_gmac_dma,
+	.clk_csr		= STMMAC_CSR_60_100M,
+	.enh_desc		= true,
+	.tx_coe			= true,
+	.bugged_jumbo		= true,
+	.pmt			= true,
+	.maxmtu			= 1500,
+	.rx_queues_to_use	= 1,
+	.tx_queues_to_use	= 1,
+	.fix_mac_speed		= pdk7105_gmac_fix_mac_speed,
+	.init			= pdk7105_gmac_init,
+};
+
+static u64 pdk7105_gmac_dma_mask = DMA_BIT_MASK(32);
+
+static struct resource pdk7105_gmac_resources[] = {
+	DEFINE_RES_MEM(PDK7105_GMAC_BASE, PDK7105_GMAC_SIZE),
+	DEFINE_RES_IRQ_NAMED(0, "macirq"),
+};
+
+static struct platform_device pdk7105_gmac_device = {
+	.name		= "stmmaceth",
+	.id		= 0,
+	.resource	= pdk7105_gmac_resources,
+	.num_resources	= ARRAY_SIZE(pdk7105_gmac_resources),
+	.dev = {
+		.platform_data		= &pdk7105_gmac_data,
+		.dma_mask		= &pdk7105_gmac_dma_mask,
+		.coherent_dma_mask	= DMA_BIT_MASK(32),
+	},
+};
+
+/*
+ * device_initcall. The dwmac driver is not registered yet, so this
+ * only publishes the device; the probe happens when that driver is
+ * registered, later in the same initcall level. The stored MAC is
+ * applied from pdk7105_apply_macs(), which is a late_initcall.
+ */
+static int __init pdk7105_gmac_register(void)
+{
+	pdk7105_gmac_data.phy_addr = pdk7105_phy_addr;
+	pdk7105_usb_set_irq(&pdk7105_gmac_resources[1], PDK7105_GMAC_EVT);
+
+	return platform_device_register(&pdk7105_gmac_device);
+}
+device_initcall(pdk7105_gmac_register);
 
 /*
  * sh_tmu looks the clock up as "fck" on "sh-tmu.0" and divides by

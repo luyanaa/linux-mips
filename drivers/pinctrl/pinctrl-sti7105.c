@@ -12,6 +12,7 @@
  * [pin], [8+pin] and [16+pin]. Bank 14 has no such register. This is
  * not the later pinctrl-st driver: that one describes a different SoC.
  */
+#include <linux/bitops.h>
 #include <linux/gpio/driver.h>
 #include <linux/init.h>
 #include <linux/io.h>
@@ -265,6 +266,25 @@ int sti7105_pio_config(unsigned int bank, unsigned int pin,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(sti7105_pio_config);
+
+/*
+ * Drive a pin that sti7105_pio_config() already made a GPIO output.
+ * gpio_request() is not used: requesting a GPIO clears the alternate
+ * function, which is wrong for a pin that only needs its level set.
+ */
+int sti7105_pio_set(unsigned int bank, unsigned int pin, int value)
+{
+	struct sti7105_pio *pio = READ_ONCE(sti7105_pio_dev);
+
+	if (!pio)
+		return -EPROBE_DEFER;
+	if (bank >= PDK7105_PIO_BANKS || pin > 7)
+		return -EINVAL;
+
+	writel(BIT(pin), pio->bank[bank] + (value ? PIO_SET_POUT : PIO_CLR_POUT));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(sti7105_pio_set);
 
 static int sti7105_pio_probe(struct platform_device *pdev)
 {
