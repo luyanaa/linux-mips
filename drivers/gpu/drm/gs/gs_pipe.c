@@ -19,12 +19,6 @@
 #include "gs_pipe.h"
 #include "gs_plane.h"
 
-static const u32 gs_pixel_formats[] = {
-	DRM_FORMAT_RGBA8888,	/* RGBA32 */
-	DRM_FORMAT_RGBX8888,	/* RGB24 */
-	DRM_FORMAT_RGBA5551,	/* RGBA16 */
-};
-
 static const struct drm_encoder_funcs gs_encoder_funcs = {
 	.destroy = drm_encoder_cleanup,
 };
