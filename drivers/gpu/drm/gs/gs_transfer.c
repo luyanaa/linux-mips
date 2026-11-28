@@ -42,7 +42,7 @@ static u32 gs_vram_page_addr(u32 offset)
 	return offset / 2048;
 }
 
-static int gs_build_upload(struct gs_device *gs,
+int gs_emit_upload(struct gs_device *gs,
 	struct drm_framebuffer *fb, u32 y, u32 x, u32 width,
 	const u8 *src, size_t len)
 {
@@ -151,7 +151,7 @@ int gs_upload_fb(struct gs_device *gs, struct drm_framebuffer *fb)
 			if (!len)
 				continue;
 
-			err = gs_build_upload(gs, fb, y, 0, len * 8 / bpp,
+			err = gs_emit_upload(gs, fb, y, 0, len * 8 / bpp,
 					      row + x, len);
 			if (err)
 				goto out;

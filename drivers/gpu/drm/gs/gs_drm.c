@@ -51,6 +51,7 @@
 #include "gs_drm.h"
 #include "gs_environment.h"
 #include "gs_gem.h"
+#include "gs_ioctl.h"
 #include "gs_mode.h"
 #include "gs_pan.h"
 #include "gs_pipe.h"
@@ -305,6 +306,8 @@ static struct drm_driver gs_driver = {
 	.driver_features = DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 
 	.fops			 = &gs_driver_fops,
+	.ioctls			 = gs_ioctls,
+	.num_ioctls		 = GS_IOCTL_COUNT,
 	DRM_GEM_SHMEM_DRIVER_OPS,
 	.gem_create_object	 = gs_gem_create_object,
 

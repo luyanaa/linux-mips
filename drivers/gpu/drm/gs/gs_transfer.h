@@ -5,6 +5,8 @@
 struct drm_framebuffer;
 struct gs_device;
 
+int gs_emit_upload(struct gs_device *gs, struct drm_framebuffer *fb,
+		   u32 y, u32 x, u32 width, const u8 *src, size_t len);
 int gs_upload_fb(struct gs_device *gs, struct drm_framebuffer *fb);
 void gs_set_scanout(struct gs_device *gs, struct drm_framebuffer *fb);
 
