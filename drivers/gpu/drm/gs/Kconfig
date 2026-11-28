@@ -4,7 +4,7 @@ config DRM_GS
 	depends on DRM && SONY_PS2
         select FW_LOADER
 	select DRM_KMS_HELPER
-	select DRM_TTM
+	select DRM_GEM_SHMEM_HELPER
 	select PS2_GS
 	select FB_TILEBLITTING
 	default n

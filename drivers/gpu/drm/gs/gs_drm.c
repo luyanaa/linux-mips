@@ -23,7 +23,9 @@
 #include <drm/drm_debugfs.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
+#include <drm/drm_gem.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_ioctl.h>
 #include <drm/drm_of.h>
 #include <drm/drm_simple_kms_helper.h>
@@ -46,12 +48,15 @@
 #include "gs_connector.h"
 #include "gs_drm.h"
 #include "gs_environment.h"
+#include "gs_gem.h"
 #include "gs_mode.h"
 #include "gs_pan.h"
 #include "gs_pipe.h"
 #include "gs_tile.h"
 
 #define DEVICE_NAME "gs-drm"
+
+DEFINE_DRM_GEM_FOPS(gs_driver_fops);
 
 /* Module parameters */
 static __maybe_unused char *video_option;
@@ -294,18 +299,12 @@ static int init_console_buffer(struct fb_info *info)
 	return 0;
 }
 
-static int gs_dumb_create(struct drm_file *file_priv,
-	struct drm_device *dev, struct drm_mode_create_dumb *args)
-{
-	printk("drm: %s\n", __func__);
-
-	return 0;	/* FIXME */
-}
-
 static struct drm_driver gs_driver = {
-	.driver_features = DRIVER_MODESET | DRIVER_ATOMIC,
+	.driver_features = DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 
-	.dumb_create	 = gs_dumb_create,
+	.fops			 = &gs_driver_fops,
+	DRM_GEM_SHMEM_DRIVER_OPS,
+	.gem_create_object	 = gs_gem_create_object,
 
 	.name		 = "gs",
 	.desc		 = "PlayStation 2 Graphics Synthesizer",
