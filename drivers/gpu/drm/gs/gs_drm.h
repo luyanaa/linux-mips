@@ -14,6 +14,7 @@
 #include <linux/fb.h>
 
 #include "gs_tile.h"
+#include "gs_vram.h"
 
 /**
  * struct gs_device - driver specific structure
@@ -30,6 +31,7 @@ struct gs_device {
 
 	struct fb_info *info;
 	struct ps2fb_par ps2par;
+	struct gs_vram vram;
 };
 
 #endif /* GS_DRM_H */

@@ -329,6 +329,10 @@ static int gs_probe(struct platform_device *pdev)
 
 	spin_lock_init(&gs->ps2par.lock);
 
+	err = gs_vram_init(&gs->vram);
+	if (err)
+		goto err_gs_alloc;
+
 	gs->ps2par.package.buffer = (union package *)__get_free_page(GFP_DMA);
 	if (!gs->ps2par.package.buffer) {
 		dev_err(&pdev->dev, "Failed to allocate package buffer\n");
@@ -399,6 +403,7 @@ err_init_buffer:
 err_fb_alloc_cmap:
 err_framebuffer_alloc:
 err_package_buffer:
+	gs_vram_fini(&gs->vram);
 	free_page((unsigned long)gs->ps2par.package.buffer);
 err_gs_alloc:
 	return err;
@@ -420,6 +425,7 @@ static void gs_remove(struct platform_device *pdev)
 		dev_err(dev->dev, "Failed to complete GIF DMA transfer\n");
 
 	free_page((unsigned long)gs->ps2par.package.buffer);
+	gs_vram_fini(&gs->vram);
 }
 
 static struct platform_driver gs_platform_driver = {
