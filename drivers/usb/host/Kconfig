@@ -512,6 +512,15 @@ config USB_OHCI_HCD_DAVINCI
 	  controller. This driver cannot currently be a loadable
 	  module because it lacks a proper PHY abstraction.
 
+config USB_OHCI_HCD_PS2
+	tristate "OHCI support for the Sony PlayStation 2"
+	depends on SONY_PS2
+	depends on USB_OHCI_HCD
+	select GENERIC_ALLOCATOR
+	default y
+	help
+	  Enables support for the Sony PlayStation 2 OHCI controller.
+
 config USB_OHCI_HCD_PPC_OF_BE
 	bool "OHCI support for OF platform bus (big endian)"
 	depends on PPC

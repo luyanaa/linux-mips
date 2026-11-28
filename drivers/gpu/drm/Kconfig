@@ -327,6 +327,8 @@ source "drivers/gpu/drm/lima/Kconfig"
 source "drivers/gpu/drm/logicvc/Kconfig"
 source "drivers/gpu/drm/loongson/Kconfig"
 source "drivers/gpu/drm/mcde/Kconfig"
+
+source "drivers/gpu/drm/gs/Kconfig"
 source "drivers/gpu/drm/mediatek/Kconfig"
 source "drivers/gpu/drm/meson/Kconfig"
 source "drivers/gpu/drm/mgag200/Kconfig"
