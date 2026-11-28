@@ -24,6 +24,7 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
 #include <drm/drm_gem.h>
+#include <drm/drm_vblank.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_ioctl.h>
@@ -39,6 +40,7 @@
 
 #include <asm/mach-ps2/dmac.h>
 #include <asm/mach-ps2/gif.h>
+#include <asm/mach-ps2/irq.h>
 #include <asm/mach-ps2/gs.h>
 #include <asm/mach-ps2/gs-registers.h>
 
@@ -312,6 +314,14 @@ static struct drm_driver gs_driver = {
 	.minor		 = 0,
 };
 
+static irqreturn_t gs_vsync_irq(int irq, void *arg)
+{
+	struct gs_device *gs = arg;
+
+	drm_crtc_handle_vblank(&gs->crtc);
+	return IRQ_HANDLED;
+}
+
 static int gs_probe(struct platform_device *pdev)
 {
 	struct drm_device *dev;
@@ -370,6 +380,14 @@ static int gs_probe(struct platform_device *pdev)
 
 	gs_mode_config_init(&gs->dev);
 
+	err = drm_vblank_init(dev, 1);
+	if (err)
+		goto err_no_vsync;
+
+	err = request_irq(IRQ_GS_VSYNC, gs_vsync_irq, 0, "gs-vsync", gs);
+	if (err)
+		goto err_no_vsync;
+
 	err = gs_connector_init(dev, &gs->connector);
 	if (err < 0)
 		goto err_connector_init;
@@ -396,8 +414,12 @@ static int gs_probe(struct platform_device *pdev)
 
 err_dev_register:
 	enable_irq(IRQ_DMAC_GIF);
+	goto err_free_vsync;
 err_pipe_init:
 	/* FIXME: drm_mode_config_cleanup(dev); */
+err_free_vsync:
+	free_irq(IRQ_GS_VSYNC, gs);
+err_no_vsync:
 err_connector_init:
 err_init_buffer:
 err_fb_alloc_cmap:
@@ -415,6 +437,8 @@ static void gs_remove(struct platform_device *pdev)
 	struct gs_device *gs = dev->dev_private;
 
 	printk("drm: %s\n", __func__);
+
+	free_irq(IRQ_GS_VSYNC, gs);
 
 	if (dev != NULL) {
 		drm_dev_unregister(dev);

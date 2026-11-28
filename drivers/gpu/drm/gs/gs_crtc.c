@@ -365,7 +365,18 @@ static int ps2fb_set_par(const struct fb_videomode *vm)
 	return 0;
 }
 
+static int gs_enable_vblank(struct drm_crtc *crtc)
+{
+	return 0;
+}
+
+static void gs_disable_vblank(struct drm_crtc *crtc)
+{
+}
+
 static const struct drm_crtc_funcs gs_crtc_funcs = {
+	.enable_vblank		= gs_enable_vblank,
+	.disable_vblank		= gs_disable_vblank,
 	.destroy		= drm_crtc_cleanup,
 	.set_config		= drm_atomic_helper_set_config,
 	.page_flip		= drm_atomic_helper_page_flip,
