@@ -9,6 +9,7 @@
 
 #include <asm/mach-ps2/irq.h>
 
+#include <drm/drm_crtc.h>
 #include <drm/drm_device.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_vblank.h>
@@ -125,7 +126,8 @@ int gs_plane_init(struct gs_device *gs)
 	/* FIXME: Look at tve200_display_init */
 
 	drm_plane_helper_add(&gs->plane, &gs_plane_helper_funcs);
-	return drm_universal_plane_init(&gs->dev, &gs->plane, 0, &gs_plane_funcs,
+	return drm_universal_plane_init(&gs->dev, &gs->plane,
+				drm_crtc_mask(&gs->crtc), &gs_plane_funcs,
 		gs_pixel_formats, ARRAY_SIZE(gs_pixel_formats),
 		NULL, DRM_PLANE_TYPE_PRIMARY, NULL);
 }
