@@ -8,7 +8,7 @@
 #ifndef GS_ENVIRONMENT_H
 #define GS_ENVIRONMENT_H
 
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 
 void write_cb_environment(struct fb_info *info);
 

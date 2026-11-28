@@ -81,7 +81,7 @@ void write_cb_pan_display(const struct fb_var_screeninfo *var,
  * Return: %true if the horizontal or vertical panning is needed, otherwise
  *	%false
  */
-static bool changed_cb_pan_display(const struct fb_var_screeninfo *var)
+static __maybe_unused bool changed_cb_pan_display(const struct fb_var_screeninfo *var)
 {
 	if (gs_valid_dispfb1()) {
 		const struct gs_dispfb dspfb12 = gs_read_dispfb1();
@@ -100,7 +100,7 @@ static bool changed_cb_pan_display(const struct fb_var_screeninfo *var)
  *
  * Return: 0 on success, otherwise a negative error number
  */
-static int ps2fb_cb_pan_display(struct fb_var_screeninfo *var,
+static __maybe_unused int ps2fb_cb_pan_display(struct fb_var_screeninfo *var,
 	struct fb_info *info)
 {
 	struct ps2fb_par *par = info_to_ps2par(info);
@@ -118,8 +118,6 @@ static int ps2fb_cb_pan_display(struct fb_var_screeninfo *var,
 
 void gs_pan_init(struct fb_info *info)
 {
-	info->fbops->fb_pan_display = ps2fb_cb_pan_display; /* FIXME: pan_display_atomic */
-
 	info->flags |= FBINFO_HWACCEL_XPAN |
 		       FBINFO_HWACCEL_YPAN |
 		       FBINFO_HWACCEL_YWRAP |

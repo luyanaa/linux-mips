@@ -15,6 +15,7 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
+#include <linux/platform_device.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
@@ -27,7 +28,7 @@
 #include <drm/drm_of.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_probe_helper.h>
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 #include <drm/drm_print.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_crtc_helper.h>
@@ -53,34 +54,14 @@
 #define DEVICE_NAME "gs-drm"
 
 /* Module parameters */
-static char *video_option;
+static __maybe_unused char *video_option;
 #if 0
 static char *mode_margin = "";
 #endif
 
 struct ps2fb_par *info_to_ps2par(const struct fb_info *info)
 {
-#if 0
-	struct drm_fb_helper *helper;
-	struct drm_device *dev;
-	struct gs_device *gs;
-
-	printk("drm: %s info: %lx\n", __func__, (unsigned long)info);
-	helper = info->par;
-	printk("drm: %s helper: %lx\n", __func__, (unsigned long)helper);
-	dev = helper->dev;
-	printk("drm: %s dev: %lx\n", __func__, (unsigned long)dev);
-	gs = dev->dev_private;
-	printk("drm: %s gs: %lx\n", __func__, (unsigned long)gs);
-
-	return &gs->ps2par;
-#else
-	struct drm_fb_helper *helper = info->par;
-	struct drm_device *dev = helper->dev;
-	struct gs_device *gs = dev->dev_private;
-
-	return &gs->ps2par;
-#endif
+	return &((struct gs_device *)info->par)->ps2par;
 }
 
 /**
@@ -247,8 +228,6 @@ static void clear_screen(struct fb_info *info)
 
 static int gs_set_par(struct fb_info *info)
 {
-	struct drm_fb_helper *fb_helper = info->par;
-
 	printk("drm: %s %u %u %u %u %u %u %u %u %u\n",
 		__func__,
 		info->var.xres,
@@ -261,7 +240,8 @@ static int gs_set_par(struct fb_info *info)
 		info->var.hsync_len,
 		info->var.vsync_len);
 
-	return drm_fb_helper_restore_fbdev_mode_unlocked(fb_helper);
+	write_cb_environment(info);
+	return 0;
 }
 
 static int gs_check_var(struct fb_var_screeninfo *var,
@@ -287,14 +267,8 @@ static int init_console_buffer(struct fb_info *info)
 	static struct fb_ops fbops = {
 		.owner		= THIS_MODULE,
 		.fb_setcolreg	= gs_fb_setcolreg,
-		.fb_blank	= drm_fb_helper_blank,
-#if 1
 		.fb_set_par	= gs_set_par,
 		.fb_check_var	= gs_check_var,
-#else
-		.fb_set_par	= drm_fb_helper_set_par,	// FIXME: Do directly
-		.fb_check_var	= drm_fb_helper_check_var,	// FIXME: Do directly
-#endif
 	};
 
 	struct ps2fb_par *par = info_to_ps2par(info);
@@ -309,7 +283,7 @@ static int init_console_buffer(struct fb_info *info)
 
 	strscpy(info->fix.id, "PS2 GS", ARRAY_SIZE(info->fix.id));
 
-	info->flags = FBINFO_DEFAULT;
+	info->flags = 0;
 	info->fbops = &fbops;
 
 	gs_pan_init(info);
@@ -320,7 +294,7 @@ static int init_console_buffer(struct fb_info *info)
 	return 0;
 }
 
-int gs_dumb_create(struct drm_file *file_priv,
+static int gs_dumb_create(struct drm_file *file_priv,
 	struct drm_device *dev, struct drm_mode_create_dumb *args)
 {
 	printk("drm: %s\n", __func__);
@@ -335,231 +309,9 @@ static struct drm_driver gs_driver = {
 
 	.name		 = "gs",
 	.desc		 = "PlayStation 2 Graphics Synthesizer",
-	.date		 = "20200202",
 	.major		 = 1,
 	.minor		 = 0,
 };
-
-static void gs_destroy_framebuffer(struct drm_framebuffer *framebuffer)
-{
-	printk("drm: %s\n", __func__);
-
-	drm_framebuffer_cleanup(framebuffer);
-}
-
-static int gs_dirty_framebuffer(struct drm_framebuffer *fb,
-	struct drm_file *file_priv, unsigned int flags, unsigned int color,
-	struct drm_clip_rect *rects, unsigned int num_rects)
-{
-	printk("drm: %s\n", __func__);
-
-	/* FIXME */
-
-	return 0;
-}
-
-static const struct drm_framebuffer_funcs gs_framebuffer_funcs = {
-	.destroy = gs_destroy_framebuffer,
-	.dirty = gs_dirty_framebuffer,
-};
-
-static void fb_helper_fill_fix(struct fb_info *info, u32 pitch, u32 depth)
-{
-	info->fix.type = FB_TYPE_PACKED_PIXELS;
-	info->fix.visual = FB_VISUAL_TRUECOLOR;
-	info->fix.mmio_start = 0;
-	info->fix.mmio_len = 0;
-	info->fix.type_aux = 0;
-	info->fix.xpanstep = 1;
-	info->fix.ypanstep = 1;
-	info->fix.ywrapstep = 0;
-	info->fix.accel = FB_ACCEL_PLAYSTATION_2;
-
-	info->fix.line_length = pitch;
-
-	/* FIXME */
-	invalidate_palette(info_to_ps2par(info));
-	info->fix.xpanstep = info->var.xres_virtual > info->var.xres ? 1 : 0;
-	info->fix.ypanstep = info->var.yres_virtual > info->var.yres ? 1 : 0;
-	info->fix.ywrapstep = 1;
-	info->fix.line_length = info->var.xres_virtual * info->var.bits_per_pixel / 8;
-}
-
-static void fb_helper_fill_var(struct fb_info *info,
-				   struct drm_fb_helper *fb_helper,
-				   uint32_t fb_width, uint32_t fb_height)
-{
-	struct drm_framebuffer *fb = fb_helper->fb;
-
-	WARN_ON((drm_format_info_block_width(fb->format, 0) > 1) ||
-		(drm_format_info_block_height(fb->format, 0) > 1));
-	// info->pseudo_palette = fb_helper->pseudo_palette;
-	info->var.xres = fb->width;
-	info->var.yres = fb->height;
-	info->var.xres_virtual = fb->width;
-	info->var.yres_virtual = fb->height;
-	info->var.bits_per_pixel = fb->format->cpp[0] * 8;
-	info->var.accel_flags = FB_ACCELF_TEXT;
-	info->var.xoffset = 0;
-	info->var.yoffset = 0;
-	info->var.activate = FB_ACTIVATE_NOW;
-
-	// FIXME: gs_connector_width_height_to_var(&info->var, fb->width, fb->height);
-
-	/* FIXME */
-	info->var.accel_flags = 0;
-	info->var.bits_per_pixel = 16;	/* FIXME: For 1920x1080 */
-
-	if (info->var.bits_per_pixel == 16) {
-		info->var.red    = (struct fb_bitfield){ .offset =  0, .length = 5 };
-		info->var.green  = (struct fb_bitfield){ .offset =  5, .length = 5 };
-		info->var.blue   = (struct fb_bitfield){ .offset = 10, .length = 5 };
-		info->var.transp = (struct fb_bitfield){ .offset = 15, .length = 1 };
-	} else if (info->var.bits_per_pixel == 32) {
-		info->var.red    = (struct fb_bitfield){ .offset =  0, .length = 8 };
-		info->var.green  = (struct fb_bitfield){ .offset =  8, .length = 8 };
-		info->var.blue   = (struct fb_bitfield){ .offset = 16, .length = 8 };
-		info->var.transp = (struct fb_bitfield){ .offset = 24, .length = 8 };
-	}
-}
-
-int gs_fb_probe(struct drm_fb_helper *helper,
-	struct drm_fb_helper_surface_size *sizes)
-{
-	const struct drm_mode_fb_cmd2 mode_cmd = {
-		.width = sizes->surface_width,
-		.height = sizes->surface_height,
-		.pixel_format = DRM_FORMAT_RGBA5551, /* FIXME: drm_mode_legacy_fb_format(
-			sizes->surface_bpp, sizes->surface_depth), */
-		.pitches =  {
-			sizes->surface_width *
-				(ALIGN(sizes->surface_bpp, 16) / 8),
-		},
-	};
-	struct drm_device *dev = helper->dev;
-	struct gs_device *gs = dev->dev_private;
-	int err;
-
-	printk("drm: %s\n", __func__);
-
-	printk("drm: %s ... 1\n", __func__);
-	gs->info->par = helper; // FIXME
-
-	drm_helper_mode_fill_fb_struct(dev, &gs->framebuffer, &mode_cmd);
-	err = drm_framebuffer_init(dev, &gs->framebuffer, &gs_framebuffer_funcs);
-	if (err)
-		goto err_framebuffer_init;
-
-	printk("drm: %s ... 2\n", __func__);
-
-	helper->fb = &gs->framebuffer;
-
-	err = init_console_buffer(gs->info);
-	printk("drm: %s: init_console_buffer: err %d\n", __func__, err);
-	if (err < 0)
-		goto err_init_buffer;
-
-	// FIXME: drm_fb_helper_fill_info(gs->info, helper, sizes);
-	fb_helper_fill_fix(gs->info, helper->fb->pitches[0], helper->fb->format->depth);
-	fb_helper_fill_var(gs->info, helper, sizes->fb_width, sizes->fb_height);
-
-	gs->ps2par.cb.block_count = var_to_block_count(gs->info);
-	write_cb_environment(gs->info);
-	write_cb_pan_display(&gs->info->var, gs->info);
-	clear_screen(gs->info);
-
-	fb_info(gs->info, "%d tiles maximum for %ux%u font\n",
-		gs->info->tileops->fb_get_tilemax(gs->info),
-		gs->ps2par.cb.tile.width, gs->ps2par.cb.tile.height);
-
-	printk("drm: %s ... 3\n", __func__);
-
-	return 0;
-
-err_init_buffer:
-	/* FIXME */
-err_framebuffer_init:
-	return err;
-}
-
-static const struct drm_fb_helper_funcs gs_fb_helper_funcs = {
-	.fb_probe = gs_fb_probe,
-};
-
-int drm_fb_helper_single_fb_probe(struct drm_fb_helper *fb_helper, int preferred_bpp); // FIXME
-void drm_setup_crtcs_fb(struct drm_fb_helper *fb_helper); // FIXME
-
-/*
- * FIXME: Corresponds to drm_fb_helper_initial_config without the problems with
- * register_framebuffer -> do_register_framebuffer -> fb_add_videomode with
- * missing refresh, timings, etc.
- */
-static int gs_fb_helper_initial_config(struct drm_fb_helper *fb_helper, int bpp_sel)
-{
-	struct drm_device *dev = fb_helper->dev;
-	struct fb_info *info = fb_helper->fbdev;
-	unsigned int width, height;
-	int err;
-
-	printk("%s: A\n", __func__);
-
-	mutex_lock(&fb_helper->lock);
-
-	printk("%s: B\n", __func__);
-
-	width = dev->mode_config.max_width;
-	height = dev->mode_config.max_height;
-
-	drm_client_modeset_probe(&fb_helper->client, width, height);
-	printk("%s: C\n", __func__);
-	err = drm_fb_helper_single_fb_probe(fb_helper, bpp_sel);
-	printk("%s: D\n", __func__);
-	if (err < 0) {
-		if (err == -EAGAIN) {
-			fb_helper->preferred_bpp = bpp_sel;
-			fb_helper->deferred_setup = true;
-			err = 0;
-		}
-		mutex_unlock(&fb_helper->lock);
-
-		return err;
-	}
-	printk("%s: E\n", __func__);
-	drm_setup_crtcs_fb(fb_helper);
-	printk("%s: F\n", __func__);
-
-	fb_helper->deferred_setup = false;
-
-	printk("%s: G\n", __func__);
-
-	/* Need to drop locks to avoid recursive deadlock in
-	 * register_framebuffer. This is ok because the only thing left to do is
-	 * register the fbdev emulation instance in kernel_fb_helper_list. */
-	mutex_unlock(&fb_helper->lock);
-	printk("%s: H\n", __func__);
-
-	err = register_framebuffer(info);
-	if (err) {
-		dev_err(dev->dev, "Failed to register framebuffer with %d\n", err);
-		return err;
-	}
-	printk("%s: I\n", __func__);
-
-	dev_info(dev->dev, "fb%d: %s frame buffer device\n",
-		 info->node, info->fix.id);
-
-#if 0 /* FIXME */
-	mutex_lock(&kernel_fb_helper_lock);
-	if (list_empty(&kernel_fb_helper_list))
-		register_sysrq_key('v', &sysrq_drm_fb_helper_restore_op);
-
-	list_add(&fb_helper->kernel_fb_list, &kernel_fb_helper_list);
-	mutex_unlock(&kernel_fb_helper_lock);
-#endif /* FIXME */
-	printk("%s: J\n", __func__);
-
-	return 0;
-}
 
 static int gs_probe(struct platform_device *pdev)
 {
@@ -569,10 +321,10 @@ static int gs_probe(struct platform_device *pdev)
 
 	printk("drm: %s\n", __func__);
 
-	gs = kzalloc(sizeof(*gs), GFP_KERNEL);
-	if (gs == NULL) {
+	gs = devm_drm_dev_alloc(&pdev->dev, &gs_driver, struct gs_device, dev);
+	if (IS_ERR(gs)) {
 		dev_err(&pdev->dev, "gs device allocation failed\n");
-		err = -ENOMEM;
+		err = PTR_ERR(gs);
 		goto err_gs_alloc;
 	}
 
@@ -597,19 +349,20 @@ static int gs_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "fb_alloc_cmap failed with %d\n", err);
 		goto err_fb_alloc_cmap;
 	}
-	gs->info->apertures = alloc_apertures(1);
-	if (!gs->info->apertures) {
-		err = -ENOMEM;
-		goto err_alloc_apertures;
-	}
 	INIT_LIST_HEAD(&gs->info->modelist);
 	gs->info->var = (struct fb_var_screeninfo) { };
 	gs->info->skip_vt_switch = true;
 
-	dev = &gs->dev;
-	err = drm_dev_init(dev, &gs_driver, &pdev->dev);
+	gs->info->par = gs;
+	err = init_console_buffer(gs->info);
 	if (err)
-		goto err_dev_init;
+		goto err_init_buffer;
+	gs->ps2par.cb.block_count = var_to_block_count(gs->info);
+	write_cb_environment(gs->info);
+	write_cb_pan_display(&gs->info->var, gs->info);
+	clear_screen(gs->info);
+
+	dev = &gs->dev;
 	dev->dev_private = gs;
 
 	gs_mode_config_init(&gs->dev);
@@ -630,34 +383,6 @@ static int gs_probe(struct platform_device *pdev)
 	 */
 	disable_irq(IRQ_DMAC_GIF);
 
-	// FIXME:
-	// drm_fb_helper_fbdev_setup ->
-	// drm_fb_helper_initial_config ->
-	// __drm_fb_helper_initial_config_and_unlock (info->var.pixclock = 0) ->
-	// register_framebuffer ->
-	// do_register_framebuffer ->
-	// fb_add_videomode (missing refresh, timings, etc.)
-#if 1
-	drm_fb_helper_prepare(dev, &gs->fb_helper, &gs_fb_helper_funcs);
-	err = drm_fb_helper_init(dev, &gs->fb_helper, 0);
-	if (err < 0) {
-		DRM_DEV_ERROR(dev->dev, "drm_fb_helper_init failed with %d\n", err);
-		goto err_drm_fb_helper_init;
-	}
-	gs->fb_helper.fbdev = gs->info;
-	// FIXME: Why not DRIVER_ATOMIC? drm_helper_disable_unused_functions(dev);
-	err = gs_fb_helper_initial_config(&gs->fb_helper,
-		dev->mode_config.preferred_depth);
-	// FIXME: err
-#else
-	err = drm_fb_helper_fbdev_setup(dev,
-		&gs->fb_helper, &gs_fb_helper_funcs,
-		dev->mode_config.preferred_depth, 1);
-	printk("drm: %s: drm_fb_helper_fbdev_setup: err %d\n", __func__, err);
-	if (err)
-		goto err_fb_helper_fbdev_setup;
-#endif
-
 	err = drm_dev_register(dev, 0);
 	if (err)
 		goto err_dev_register;
@@ -666,57 +391,36 @@ static int gs_probe(struct platform_device *pdev)
 
 	return 0;
 
-#if 0
-err_register_framebuffer:
-	fb_dealloc_cmap(&info->cmap);
-err_alloc_cmap:
-err_find_mode:
-err_init_buffer:
-#endif
-	drm_fb_helper_fbdev_teardown(dev);
 err_dev_register:
-err_fb_helper_fbdev_setup:
 	enable_irq(IRQ_DMAC_GIF);
-err_drm_fb_helper_init:
 err_pipe_init:
-	// FIXME: drm_mode_config_cleanup(dev);
+	/* FIXME: drm_mode_config_cleanup(dev); */
 err_connector_init:
-	// FIXME: drm_dev_put(dev);
-err_dev_init:
-	free_page((unsigned long)gs->ps2par.package.buffer);
-err_alloc_apertures:
+err_init_buffer:
 err_fb_alloc_cmap:
 err_framebuffer_alloc:
 err_package_buffer:
-	kfree(gs);
+	free_page((unsigned long)gs->ps2par.package.buffer);
 err_gs_alloc:
 	return err;
 }
 
-static int gs_remove(struct platform_device *pdev)
+static void gs_remove(struct platform_device *pdev)
 {
 	struct drm_device *dev = platform_get_drvdata(pdev);
 	struct gs_device *gs = dev->dev_private;
-	int err = 0;
 
 	printk("drm: %s\n", __func__);
 
 	if (dev != NULL) {
-		drm_fb_helper_fbdev_teardown(dev);
 		drm_dev_unregister(dev);
 		drm_mode_config_cleanup(dev);
-		drm_dev_put(dev);
 	}
 
-	if (!gif_wait()) {
+	if (!gif_wait())
 		dev_err(dev->dev, "Failed to complete GIF DMA transfer\n");
-		err = -EBUSY;
-	}
-	enable_irq(IRQ_DMAC_GIF);
 
 	free_page((unsigned long)gs->ps2par.package.buffer);
-
-	return err;
 }
 
 static struct platform_driver gs_platform_driver = {

@@ -11,7 +11,7 @@
 #include <drm/drm_device.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_framebuffer.h>
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 
 #include "gs_tile.h"
 
@@ -27,7 +27,6 @@ struct gs_device {
 	struct drm_connector connector;
 
 	struct drm_framebuffer framebuffer;
-	struct drm_fb_helper fb_helper;
 
 	struct fb_info *info;
 	struct ps2fb_par ps2par;

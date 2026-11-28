@@ -8,7 +8,7 @@
 #ifndef GS_TILE_H
 #define GS_TILE_H
 
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 
 #include <asm/mach-ps2/dmac.h>
 

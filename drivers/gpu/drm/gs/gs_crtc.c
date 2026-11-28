@@ -366,7 +366,6 @@ static int ps2fb_set_par(const struct fb_videomode *vm)
 }
 
 static const struct drm_crtc_funcs gs_crtc_funcs = {
-	.reset			= drm_atomic_helper_crtc_reset,
 	.destroy		= drm_crtc_cleanup,
 	.set_config		= drm_atomic_helper_set_config,
 	.page_flip		= drm_atomic_helper_page_flip,
@@ -379,16 +378,17 @@ static const struct drm_crtc_funcs gs_crtc_funcs = {
 };
 
 static void gs_atomic_flush(struct drm_crtc *crtc,
-	struct drm_crtc_state *old_crtc_state)
+	struct drm_atomic_commit *state)
 {
-	const struct drm_crtc_state *state = crtc->state;
-	const struct drm_display_mode *mode = &state->mode;
+	const struct drm_crtc_state *crtc_state = crtc->state;
+	(void)state;
+	const struct drm_display_mode *mode = &crtc_state->mode;
 	struct gs_device *gs = container_of(crtc, struct gs_device, crtc);
 	struct fb_var_screeninfo *var = &gs->info->var;
 
 	const struct fb_videomode vm = {
 		.name = mode->name,
-		.refresh = mode->vrefresh,
+		.refresh = drm_mode_vrefresh(mode),
 		.xres = mode->crtc_hdisplay,
 		.yres = mode->crtc_vdisplay,
 		.left_margin = mode->crtc_htotal - mode->crtc_hsync_end,
@@ -429,8 +429,10 @@ static enum drm_mode_status gs_mode_valid(struct drm_crtc *crtc,
 }
 
 static int gs_atomic_check(struct drm_crtc *crtc,
-				     struct drm_crtc_state *state)
+				   struct drm_atomic_commit *state)
 {
+	(void)crtc;
+	(void)state;
 #if 1
 	printk("drm: %s\n", __func__);
 
@@ -448,8 +450,10 @@ static int gs_atomic_check(struct drm_crtc *crtc,
 }
 
 static void gs_atomic_enable(struct drm_crtc *crtc,
-				       struct drm_crtc_state *old_state)
+				     struct drm_atomic_commit *state)
 {
+	(void)crtc;
+	(void)state;
 #if 1
 	printk("drm: %s\n", __func__);
 #else
@@ -466,8 +470,10 @@ static void gs_atomic_enable(struct drm_crtc *crtc,
 }
 
 static void gs_atomic_disable(struct drm_crtc *crtc,
-					struct drm_crtc_state *old_state)
+				      struct drm_atomic_commit *state)
 {
+	(void)crtc;
+	(void)state;
 #if 1
 	printk("drm: %s\n", __func__);
 #else

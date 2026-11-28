@@ -7,7 +7,7 @@
 
 #include <linux/kernel.h>
 
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 #include <drm/drm_print.h>
 
 #include <asm/mach-ps2/gif.h>
@@ -631,7 +631,7 @@ static size_t package_copyarea(union package *package,
  * @area: area to copy
  * @info: frame buffer info object
  */
-void gs_copyarea(const struct fb_copyarea *area, struct fb_info *info)
+static void gs_copyarea(const struct fb_copyarea *area, struct fb_info *info)
 {
 	const enum gs_psm psm = gs_var_to_psm(&info->var);
 	struct ps2fb_par *par = info_to_ps2par(info);
@@ -814,8 +814,22 @@ void gs_tile_init(struct fb_info *info)
 	 * BITBLTBUF for pixel format CT32 requires divisibility by 2,
 	 * and CT16 requires divisibility by 4. So 4 is a safe choice.
 	 */
-	info->pixmap.blit_x = block_dimensions(GS_PSMT4_BLOCK_WIDTH, 4);
-	info->pixmap.blit_y = block_dimensions(GS_PSMT4_BLOCK_HEIGHT, 1);
+	{
+		unsigned long mask;
+		unsigned int i;
+
+		mask = block_dimensions(GS_PSMT4_BLOCK_WIDTH, 4);
+		bitmap_zero(info->pixmap.blit_x, FB_MAX_BLIT_WIDTH);
+		for (i = 0; i < BITS_PER_LONG; i++)
+			if (mask & BIT(i))
+				set_bit(i, info->pixmap.blit_x);
+
+		mask = block_dimensions(GS_PSMT4_BLOCK_HEIGHT, 1);
+		bitmap_zero(info->pixmap.blit_y, FB_MAX_BLIT_HEIGHT);
+		for (i = 0; i < BITS_PER_LONG; i++)
+			if (mask & BIT(i))
+				set_bit(i, info->pixmap.blit_y);
+	}
 
 	/* 8x8 default font tile size for fb_get_tilemax */
 	par->cb.tile = cb_tile(8, 8);

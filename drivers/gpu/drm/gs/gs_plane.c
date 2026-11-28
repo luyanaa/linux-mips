@@ -57,9 +57,11 @@ static void gs_pipe_enable(struct drm_simple_display_pipe *pipe,
 #endif
 
 static void gs_plane_atomic_update(struct drm_plane *plane,
-	struct drm_plane_state *old_pstate)
+	struct drm_atomic_commit *state)
 {
 	struct gs_device *gs = container_of(plane, struct gs_device, plane);
+
+	(void)state;
 	struct drm_crtc *crtc = &gs->crtc;
 
 	printk("drm: %s\n", __func__);
@@ -109,16 +111,11 @@ static const struct drm_plane_funcs gs_plane_funcs = {
 	.update_plane		= drm_atomic_helper_update_plane,
 	.disable_plane		= drm_atomic_helper_disable_plane,
 	.destroy		= drm_plane_cleanup,
-	.reset			= drm_atomic_helper_plane_reset,
 	.atomic_duplicate_state	= drm_atomic_helper_plane_duplicate_state,
 	.atomic_destroy_state	= drm_atomic_helper_plane_destroy_state,
 #if 0
 	.format_mod_supported   = drm_simple_kms_format_mod_supported,
 #endif
-};
-
-static const struct drm_encoder_funcs gs_encoder_funcs = {
-	.destroy = drm_encoder_cleanup,
 };
 
 int gs_plane_init(struct gs_device *gs)

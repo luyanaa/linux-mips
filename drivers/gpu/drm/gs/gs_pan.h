@@ -8,7 +8,7 @@
 #ifndef GS_PAN_H
 #define GS_PAN_H
 
-#include <drm/drm_fb_helper.h>
+#include <linux/fb.h>
 
 void write_cb_pan_display(const struct fb_var_screeninfo *var,
 	const struct fb_info *info);

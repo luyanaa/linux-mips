@@ -90,6 +90,7 @@ static bool pixel_format_fits(const u32 width, const u32 height,
 
 static struct drm_framebuffer *gs_fb_create(
 	struct drm_device *dev, struct drm_file *file_priv,
+	const struct drm_format_info *format,
 	const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	printk("drm: %s\n", __func__);		/* FIXME */
@@ -100,7 +101,7 @@ static struct drm_framebuffer *gs_fb_create(
 
 	/* FIXME: See drm_fb_helper_alloc_fbi in udlfb_create */
 
-	return drm_gem_fb_create_with_dirty(dev, file_priv, mode_cmd);	/* FIXME */
+	return drm_gem_fb_create_with_dirty(dev, file_priv, format, mode_cmd);	/* FIXME */
 }
 
 static const struct drm_mode_config_funcs gs_mode_config_funcs = {

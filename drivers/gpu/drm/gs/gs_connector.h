@@ -8,6 +8,8 @@
 #ifndef GS_CONNECTOR_H
 #define GS_CONNECTOR_H
 
+#include <linux/fb.h>
+
 #include <drm/drm_connector.h>
 
 int gs_connector_width_height_to_var(struct fb_var_screeninfo *var,
