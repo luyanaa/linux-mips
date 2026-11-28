@@ -10,7 +10,10 @@
 
 #include <drm/drm_device.h>
 #include <drm/drm_connector.h>
+#include <drm/drm_crtc.h>
+#include <drm/drm_encoder.h>
 #include <drm/drm_framebuffer.h>
+#include <drm/drm_plane.h>
 #include <linux/fb.h>
 
 #include "gs_tile.h"

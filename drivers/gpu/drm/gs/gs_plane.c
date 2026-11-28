@@ -14,10 +14,12 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_vblank.h>
 #include <drm/drm_modeset_helper_vtables.h>
+#include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 
 #include "gs_crtc.h"
 #include "gs_plane.h"
+#include "gs_transfer.h"
 
 #if 0
 static enum drm_mode_status gs_pipe_mode_valid(
@@ -61,8 +63,17 @@ static void gs_plane_atomic_update(struct drm_plane *plane,
 	struct drm_atomic_commit *state)
 {
 	struct gs_device *gs = container_of(plane, struct gs_device, plane);
+	struct drm_plane_state *pstate;
 
-	(void)state;
+	if (!state)
+		return;
+
+	pstate = drm_atomic_get_plane_state(state, plane);
+	if (IS_ERR_OR_NULL(pstate) || !pstate->fb)
+		return;
+
+	gs_upload_fb(gs, pstate->fb);
+	gs_set_scanout(gs, pstate->fb);
 	struct drm_crtc *crtc = &gs->crtc;
 
 	printk("drm: %s\n", __func__);
