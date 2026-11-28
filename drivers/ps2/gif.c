@@ -10,9 +10,12 @@
 #include <linux/dma-mapping.h>
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/platform_device.h>
+#include <linux/time.h>
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
@@ -58,34 +61,53 @@ bool gif_busy(void)
 }
 EXPORT_SYMBOL_GPL(gif_busy);
 
+static DEFINE_MUTEX(gif_submit_mutex);
+
 bool gif_wait(void)
 {
-	size_t countout = 1000000;
+	const unsigned long timeout = jiffies + msecs_to_jiffies(1000);
 
-	while (gif_busy() && countout > 0)
-		countout--;
+	while (gif_busy() && time_before(jiffies, timeout))
+		cpu_relax();
 
-	return countout > 0;
+	return !gif_busy();
 }
 EXPORT_SYMBOL_GPL(gif_wait);
 
-void gif_write(union gif_data *base_package, size_t package_count)
+int gif_submit(union gif_data *base_package, size_t package_count)
 {
 	const size_t size = package_count * sizeof(*base_package);
-	const dma_addr_t madr = virt_to_phys(base_package);
+	dma_addr_t madr;
+	int err = 0;
 
 	if (!package_count)
-		return;
+		return 0;
 
+	mutex_lock(&gif_submit_mutex);
+
+	/* Wait for the previous transfer with a real time-based timeout. */
+	if (!gif_wait()) {
+		gif_reset();
+		err = -ETIMEDOUT;
+		goto out;
+	}
+
+	madr = virt_to_phys(base_package);
 	dma_cache_wback((unsigned long)base_package, size);
-
-	/* Wait for previous transmissions to finish. */
-	while (gif_busy())
-		;
 
 	outl(madr, DMAC_GIF_MADR);
 	outl(package_count, DMAC_GIF_QWC);
 	outl(DMAC_CHCR_SENDN, DMAC_GIF_CHCR);
+
+out:
+	mutex_unlock(&gif_submit_mutex);
+	return err;
+}
+EXPORT_SYMBOL_GPL(gif_submit);
+
+void gif_write(union gif_data *base_package, size_t package_count)
+{
+	gif_submit(base_package, package_count);
 }
 EXPORT_SYMBOL_GPL(gif_write);
 

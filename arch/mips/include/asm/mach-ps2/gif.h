@@ -72,6 +72,8 @@ void gif_reset(void);
  */
 bool gif_wait(void);
 
+int gif_submit(union gif_data *base_package, size_t package_count);
+
 void gif_write(union gif_data *base_package, size_t package_count);
 
 bool gif_busy(void);
