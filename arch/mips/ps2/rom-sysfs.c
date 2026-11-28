@@ -163,7 +163,7 @@ static ssize_t rom_extinfo_data_show(struct kobject *kobj,
 	struct kobj_attribute *attr, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "0x%lx\n",
-		virt_to_phys(rom_file_from_kobj(kobj->parent).extinfo.data));
+		(unsigned long)virt_to_phys(rom_file_from_kobj(kobj->parent).extinfo.data));
 }
 
 static ssize_t rom_extinfo_version_show(struct kobject *kobj,
@@ -218,7 +218,7 @@ static ssize_t rom_file_data_show(struct kobject *kobj,
 	struct kobj_attribute *attr, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "0x%lx\n",
-		virt_to_phys(rom_file_from_kobj(kobj).data));
+		(unsigned long)virt_to_phys(rom_file_from_kobj(kobj).data));
 }
 
 #define DEFINE_ROM_FIELD_ATTR(prefix, field)				\
