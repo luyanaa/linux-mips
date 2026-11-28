@@ -34,10 +34,16 @@
 	 */
 	.macro	setup_c0_status set clr
 	.set	push
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	t0, CP0_STATUS
 	or	t0, ST0_KERNEL_CUMASK|\set|0x1f|\clr
 	xor	t0, 0x1f|\clr
 	mtc0	t0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	.set	noreorder
 	sll	zero,3				# ehb
 	.set	pop
@@ -109,6 +115,9 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
 	LONG_S		a3, fw_arg3
 
 	MTC0		zero, CP0_CONTEXT	# clear context register
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 #ifdef CONFIG_64BIT
 	MTC0		zero, CP0_XCONTEXT
 #endif

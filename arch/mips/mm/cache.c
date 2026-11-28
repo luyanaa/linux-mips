@@ -27,6 +27,7 @@
 
 /* Cache operations. */
 void (*flush_cache_all)(void);
+EXPORT_SYMBOL(flush_cache_all);
 void (*__flush_cache_all)(void);
 EXPORT_SYMBOL_GPL(__flush_cache_all);
 void (*flush_cache_mm)(struct mm_struct *mm);
@@ -79,6 +80,10 @@ struct bcache_ops *bcops = &no_sc_ops;
 void (*_dma_cache_wback_inv)(unsigned long start, unsigned long size);
 void (*_dma_cache_wback)(unsigned long start, unsigned long size);
 void (*_dma_cache_inv)(unsigned long start, unsigned long size);
+
+EXPORT_SYMBOL(_dma_cache_wback_inv);
+EXPORT_SYMBOL(_dma_cache_wback);
+EXPORT_SYMBOL(_dma_cache_inv);
 
 #endif /* CONFIG_DMA_NONCOHERENT */
 

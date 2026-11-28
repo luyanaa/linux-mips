@@ -404,4 +404,10 @@ extern int mips_set_process_fp_mode(struct task_struct *task,
 
 void show_registers(struct pt_regs *regs);
 
+static inline void __noreturn cpu_relax_forever(void)
+{
+	for (;;)
+		cpu_relax();
+}
+
 #endif /* _ASM_PROCESSOR_H */

@@ -1045,6 +1045,27 @@ config CAVIUM_OCTEON_SOC
 		Hikari
 	  Say Y here for most Octeon reference boards.
 
+config SONY_PS2
+	bool "Sony PlayStation 2"
+	select BOOT_ELF32
+	select CEVT_R4K
+	select CSRC_R4K
+	select DMA_NONCOHERENT
+	select HARDIRQS_SW_RESEND
+	select HAVE_PATA_PLATFORM
+	select IRQ_MIPS_CPU
+	select MIPS_L1_CACHE_SHIFT_6
+	select NO_IOPORT_MAP
+	select SYS_HAS_CPU_R5900
+	select SYS_HAS_EARLY_PRINTK
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_SUPPORTS_ZBOOT
+	select USB_OHCI_HCD
+	select USB_OHCI_LITTLE_ENDIAN
+	help
+	  This enables support for the Sony PlayStation 2.
+
 endchoice
 
 source "arch/mips/alchemy/Kconfig"
@@ -1068,6 +1089,7 @@ source "arch/mips/cavium-octeon/Kconfig"
 source "arch/mips/loongson2ef/Kconfig"
 source "arch/mips/loongson32/Kconfig"
 source "arch/mips/loongson64/Kconfig"
+source "arch/mips/ps2/Kconfig"
 
 endmenu
 
@@ -1695,6 +1717,14 @@ config CPU_BMIPS
 	help
 	  Support for BMIPS32/3300/4350/4380 and BMIPS5000 processors.
 
+config CPU_R5900
+	bool "R5900"
+	depends on SYS_HAS_CPU_R5900
+	select CPU_SUPPORTS_32BIT_KERNEL
+	select IRQ_MIPS_CPU
+	help
+	  Toshiba R5900 processor (Emotion Engine in the Sony PlayStation 2).
+
 endchoice
 
 config LOONGSON3_ENHANCEMENT
@@ -1922,6 +1952,9 @@ config SYS_HAS_CPU_R5000
 	bool
 
 config SYS_HAS_CPU_R5500
+	bool
+
+config SYS_HAS_CPU_R5900
 	bool
 
 config SYS_HAS_CPU_NEVADA
@@ -2182,7 +2215,7 @@ config MIPS_FP_SUPPORT
 config CPU_R2300_FPU
 	bool
 	depends on MIPS_FP_SUPPORT
-	default y if CPU_R3000
+	default y if CPU_R3000 || CPU_R5900
 
 config CPU_R3K_TLB
 	bool

@@ -274,10 +274,32 @@ static inline void pfx##out##bwlq(type val, unsigned long port)		\
 									\
 	__val = pfx##ioswab##bwlq(__addr, val);				\
 									\
-	/* Really, we want this to be atomic */				\
-	BUILD_BUG_ON(sizeof(type) > sizeof(unsigned long));		\
+	if (sizeof(type) != sizeof(u64) || sizeof(u64) == sizeof(long)) { \
+		*__addr = __val;					\
+	} else if (cpu_has_64bits) {					\
+		unsigned long __flags;					\
+		type __tmp;						\
 									\
-	*__addr = __val;						\
+		/* 64-bit register access in a 32-bit kernel requires */	\
+		/* interrupts to be disabled, since only 32-bit registers */	\
+		/* are saved and restored by interrupts. */			\
+		local_irq_save(__flags);				\
+		__asm__ __volatile__(					\
+			".set\tpush"		"\t\t# __outq""\n\t"	\
+			".set\tmips3"				"\n\t"	\
+			"dsll32\t%L0, %L0, 0"			"\n\t"	\
+			"dsrl32\t%L0, %L0, 0"			"\n\t"	\
+			"dsll32\t%M0, %M0, 0"			"\n\t"	\
+			"or\t%L0, %L0, %M0"			"\n\t"	\
+			"sd\t%L0, %2"				"\n\t"	\
+			"sll\t%L0, %L0, 0"			"\n\t"	\
+			"sll\t%M0, %M0, 0"			"\n\t"	\
+			".set\tpop"				"\n"	\
+			: "=r" (__tmp)					\
+			: "0" (__val), "m" (*__addr));			\
+		local_irq_restore(__flags);				\
+	} else								\
+		BUG();							\
 }									\
 									\
 static inline type pfx##in##bwlq(unsigned long port)			\
@@ -287,12 +309,30 @@ static inline type pfx##in##bwlq(unsigned long port)			\
 									\
 	__addr = (void *)__swizzle_addr_##bwlq(mips_io_port_base + port); \
 									\
-	BUILD_BUG_ON(sizeof(type) > sizeof(unsigned long));		\
-									\
 	if (barrier)							\
 		iobarrier_rw();						\
 									\
-	__val = *__addr;						\
+	if (sizeof(type) != sizeof(u64) || sizeof(u64) == sizeof(long)) { \
+		__val = *__addr;					\
+	} else if (cpu_has_64bits) {					\
+		unsigned long __flags;					\
+									\
+		/* 64-bit register access in a 32-bit kernel requires */	\
+		/* interrupts to be disabled, since only 32-bit registers */	\
+		/* are saved and restored by interrupts. */			\
+		local_irq_save(__flags);				\
+		__asm__ __volatile__(					\
+			".set\tpush"		"\t\t# __inq""\n\t"	\
+			".set\tmips3"				"\n\t"	\
+			"ld\t%L0, %1"				"\n\t"	\
+			"dsra32\t%M0, %L0, 0"			"\n\t"	\
+			"sll\t%L0, %L0, 0"			"\n\t"	\
+			".set\tpop"				"\n"	\
+			: "=r" (__val)					\
+			: "m" (*__addr));				\
+		local_irq_restore(__flags);				\
+	} else								\
+		BUG();							\
 									\
 	/* prevent prefetching of coherent DMA data prematurely */	\
 	if (!relax)							\
@@ -331,7 +371,7 @@ __BUILD_MEMORY_PFX(__mem_, q, u64, 0)
 BUILDIO_IOPORT(b, u8)
 BUILDIO_IOPORT(w, u16)
 BUILDIO_IOPORT(l, u32)
-#ifdef CONFIG_64BIT
+#if defined(CONFIG_64BIT) || defined(CONFIG_CPU_R5900)
 BUILDIO_IOPORT(q, u64)
 #endif
 
@@ -552,6 +592,12 @@ void pci_iounmap(struct pci_dev *dev, void __iomem *addr);
 
 #ifndef PCI_IOBASE
 #define PCI_IOBASE ((void __iomem *)mips_io_port_base)
+#endif
+
+#ifdef CONFIG_SONY_PS2
+#define ARCH_HAS_VALID_PHYS_ADDR_RANGE
+extern int valid_phys_addr_range(phys_addr_t addr, size_t size);
+extern int valid_mmap_phys_addr_range(unsigned long pfn, size_t size);
 #endif
 
 #include <asm-generic/io.h>

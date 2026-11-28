@@ -33,8 +33,8 @@ void __iomem *bmips_cbr_addr __read_mostly;
 void bcm63xx_machine_halt(void)
 {
 	pr_info("System halted\n");
-	while (1)
-		;
+
+	cpu_relax_forever();
 }
 
 static void bcm6348_a1_reboot(void)
@@ -66,8 +66,8 @@ static void bcm6348_a1_reboot(void)
 		"jr\t%0"
 		:
 		: "r" (0xbfc00000));
-	while (1)
-		;
+
+	cpu_relax_forever();
 }
 
 void bcm63xx_machine_reboot(void)
@@ -126,8 +126,7 @@ void bcm63xx_machine_reboot(void)
 		reg |= SYS_PLL_SOFT_RESET;
 		bcm_perf_writel(reg, PERF_SYS_PLL_CTL_REG);
 	}
-	while (1)
-		;
+	cpu_relax_forever();
 }
 
 static void __bcm63xx_machine_reboot(char *p)

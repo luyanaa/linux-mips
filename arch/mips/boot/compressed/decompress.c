@@ -16,6 +16,7 @@
 #include <linux/libfdt.h>
 
 #include <asm/addrspace.h>
+#include <asm/processor.h>
 #include <linux/unaligned.h>
 #include <asm-generic/vmlinux.lds.h>
 
@@ -34,8 +35,7 @@ void error(char *x)
 	puts(x);
 	puts("\n\n -- System halted");
 
-	while (1)
-		;	/* Halt */
+	cpu_relax_forever();	/* Halt */
 }
 
 /* activate the code for pre-boot environment */

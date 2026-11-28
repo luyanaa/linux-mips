@@ -19,6 +19,7 @@
 
 #include <asm/io.h>
 #include <asm/irq.h>
+#include <asm/processor.h>
 #include <asm/reboot.h>
 #include <asm/sgialib.h>
 #include <asm/sn/addrs.h>
@@ -51,7 +52,7 @@ static void ip27_machine_restart(char *command)
 #else
 	LOCAL_HUB_S(NI_PORT_RESET, NPR_PORTRESET | NPR_LOCALRESET);
 #endif
-	noreturn;
+	cpu_relax_forever();
 }
 
 static void ip27_machine_halt(void)

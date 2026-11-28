@@ -56,9 +56,15 @@
 	.endm
 #else /* !CONFIG_CPU_MIPSR2 && !CONFIG_CPU_MIPSR5 && !CONFIG_CPU_MIPSR6 */
 	.macro	local_irq_enable reg=t0
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	\reg, CP0_STATUS
 	ori	\reg, \reg, 1
 	mtc0	\reg, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	irq_enable_hazard
 	.endm
 
@@ -68,10 +74,16 @@
 	addi    \reg, \reg, 1
 	sw      \reg, TI_PRE_COUNT($28)
 #endif
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	\reg, CP0_STATUS
 	ori	\reg, \reg, 1
 	xori	\reg, \reg, 1
 	mtc0	\reg, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	irq_disable_hazard
 #ifdef CONFIG_PREEMPTION
 	lw      \reg, TI_PRE_COUNT($28)
@@ -660,5 +672,46 @@
 	msa_init_upper	31
 	.set	pop
 	.endm
+
+#ifdef CONFIG_CPU_R5900
+/*
+ * Workaround for the R5900 short loop bug
+ *
+ * The short loop bug under certain conditions causes loops to execute only
+ * once or twice. The Gnu assembler (GAS) has the following note about it:
+ *
+ *     On the R5900 short loops need to be fixed by inserting a NOP in the
+ *     branch delay slot.
+ *
+ *     The short loop bug under certain conditions causes loops to execute
+ *     only once or twice. We must ensure that the assembler never
+ *     generates loops that satisfy all of the following conditions:
+ *
+ *     - a loop consists of less than or equal to six instructions
+ *       (including the branch delay slot);
+ *     - a loop contains only one conditional branch instruction at the
+ *       end of the loop;
+ *     - a loop does not contain any other branch or jump instructions;
+ *     - a branch delay slot of the loop is not NOP (EE 2.9 or later).
+ *
+ *     We need to do this because of a hardware bug in the R5900 chip.
+ *
+ * GAS handles the short loop bug in most cases. However, GAS is unable to
+ * adjust machine code having the noreorder directive, as used by the kernel
+ * on several occasions. The short_loop_war macro defined here can be used
+ * to insert necessary NOPs by placing it just before the jump instruction.
+ */
+	.macro	short_loop_war loop_target
+	.set	instruction_count,2 + (. - \loop_target) / 4
+	.ifgt	7 - instruction_count
+	.rept	7 - instruction_count
+	nop
+	.endr
+	.endif
+	.endm
+#else
+	.macro	short_loop_war loop_target
+	.endm
+#endif
 
 #endif /* _ASM_ASMMACRO_H */

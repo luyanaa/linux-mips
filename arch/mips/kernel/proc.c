@@ -142,6 +142,8 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		seq_puts(m, " htw");
 	if (cpu_has_xpa)
 		seq_puts(m, " xpa");
+	if (cpu_has_toshiba_mmi)
+		seq_puts(m, " toshiba-mmi");
 	if (cpu_has_loongson_mmi)
 		seq_puts(m, " loongson-mmi");
 	if (cpu_has_loongson_cam)

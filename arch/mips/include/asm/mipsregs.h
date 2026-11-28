@@ -653,6 +653,14 @@
 #define R5K_CONF_SE		(_ULCAST_(1) << 12)
 #define R5K_CONF_SS		(_ULCAST_(3) << 20)
 
+/* Bits specific to the R5900. */
+#define R5900_CONF_BPE		(_ULCAST_(1) << 12)	/* Enable branch prediction. */
+#define R5900_CONF_NBE		(_ULCAST_(1) << 13)	/* Enable non-blocking load. */
+#define R5900_CONF_BE		(_ULCAST_(1) << 15)	/* Enable big-endian (read-only). */
+#define R5900_CONF_DCE		(_ULCAST_(1) << 16)	/* Enable the data cache. */
+#define R5900_CONF_ICE		(_ULCAST_(1) << 17)	/* Enable the instruction cache. */
+#define R5900_CONF_DIE		(_ULCAST_(1) << 18)	/* Enable double issue. */
+
 /* Bits specific to the RM7000.	 */
 #define RM7K_CONF_SE		(_ULCAST_(1) <<	 3)
 #define RM7K_CONF_TE		(_ULCAST_(1) << 12)
@@ -1569,6 +1577,29 @@ do {								\
  * Macros to access the system control coprocessor
  */
 
+#ifdef CONFIG_CPU_R5900
+#define ___read_32bit_c0_register(source, sel, vol)			\
+({ unsigned int __res;							\
+	if (sel == 0)							\
+		__asm__ vol(						\
+			".set\tpush\n\t"				\
+			".set\tnoreorder\n\t"			\
+			"sync.p\n\t"					\
+			"mfc0\t%0, " #source "\n\t"			\
+			".set\tpop\n\t"					\
+			: "=r" (__res));				\
+	else								\
+		__asm__ vol(						\
+			".set\tpush\n\t"				\
+			".set\tnoreorder\n\t"			\
+			".set\tmips32\n\t"				\
+			"sync.p\n\t"					\
+			"mfc0\t%0, " #source ", " #sel "\n\t"		\
+			".set\tpop\n\t"					\
+			: "=r" (__res));				\
+	__res;								\
+})
+#else
 #define ___read_32bit_c0_register(source, sel, vol)			\
 ({ unsigned int __res;							\
 	if (sel == 0)							\
@@ -1584,6 +1615,7 @@ do {								\
 			: "=r" (__res));				\
 	__res;								\
 })
+#endif
 
 #define ___read_64bit_c0_register(source, sel, vol)			\
 ({ unsigned long long __res;						\
@@ -1618,6 +1650,28 @@ do {								\
 #define __read_const_64bit_c0_register(source, sel)			\
 	___read_64bit_c0_register(source, sel,)
 
+#ifdef CONFIG_CPU_R5900
+#define __write_32bit_c0_register(register, sel, value)			\
+do {									\
+	if (sel == 0)							\
+		__asm__ __volatile__(					\
+			".set\tpush\n\t"				\
+			".set\tnoreorder\n\t"			\
+			"mtc0\t%z0, " #register "\n\t"			\
+			"sync.p\n\t"					\
+			".set\tpop\n\t"					\
+			: : "Jr" ((unsigned int)(value)));		\
+	else								\
+		__asm__ __volatile__(					\
+			".set\tpush\n\t"				\
+			".set\tnoreorder\n\t"			\
+			".set\tmips32\n\t"				\
+			"mtc0\t%z0, " #register ", " #sel "\n\t"	\
+			"sync.p\n\t"					\
+			".set\tpop\n\t"					\
+			: : "Jr" ((unsigned int)(value)));		\
+} while (0)
+#else
 #define __write_32bit_c0_register(register, sel, value)			\
 do {									\
 	if (sel == 0)							\
@@ -1632,6 +1686,7 @@ do {									\
 			".set\tpop"					\
 			: : "Jr" ((unsigned int)(value)));		\
 } while (0)
+#endif
 
 #define __write_64bit_c0_register(register, sel, value)			\
 do {									\
@@ -2557,6 +2612,26 @@ do {									\
 	: : "r" (val));							\
 } while (0)
 
+#ifdef CONFIG_CPU_R5900
+#define mfsa()								\
+({									\
+	unsigned long __treg;						\
+	__asm__ __volatile__(						\
+	"\tmfsa\t%0\n"						\
+	: "=r" (__treg));						\
+	__treg;								\
+})
+
+#define mtsa(x)								\
+do {									\
+	unsigned long __treg = (x);					\
+	__asm__ __volatile__(						\
+	"\tmtsa\t%0\n"						\
+	:								\
+	: "r" (__treg));						\
+} while (0)
+#endif
+
 #ifdef TOOLCHAIN_SUPPORTS_DSP
 #define rddsp(mask)							\
 ({									\
@@ -2898,6 +2973,14 @@ static inline void tlb_probe(void)
 	__asm__ __volatile__(
 		".set noreorder\n\t"
 		"tlbp\n\t"
+#ifdef CONFIG_CPU_R5900
+		/* No memory access behind the tlbp instruction. */
+		"sync.p\n\t"
+		"nop\n\t"
+		"nop\n\t"
+		"nop\n\t"
+		"nop\n\t"
+#endif
 		".set reorder");
 }
 
@@ -2922,7 +3005,19 @@ static inline void tlb_read(void)
 
 	__asm__ __volatile__(
 		".set noreorder\n\t"
+#ifdef CONFIG_CPU_R5900
+		/* Instruction must not be at the end of a page. */
+		".align 8\n\t"
+#endif
 		"tlbr\n\t"
+#ifdef CONFIG_CPU_R5900
+		"sync.p\n\t"
+		/* No branch behind tlbr. */
+		"nop\n\t"
+		"nop\n\t"
+		"nop\n\t"
+		"nop\n\t"
+#endif
 		".set reorder");
 
 #ifdef CONFIG_WAR_MIPS34K_MISSED_ITLB
@@ -2943,6 +3038,9 @@ static inline void tlb_write_indexed(void)
 	__asm__ __volatile__(
 		".set noreorder\n\t"
 		"tlbwi\n\t"
+#ifdef CONFIG_CPU_R5900
+		"sync.p\n\t"
+#endif
 		".set reorder");
 }
 
@@ -2951,6 +3049,9 @@ static inline void tlb_write_random(void)
 	__asm__ __volatile__(
 		".set noreorder\n\t"
 		"tlbwr\n\t"
+#ifdef CONFIG_CPU_R5900
+		"sync.p\n\t"
+#endif
 		".set reorder");
 }
 

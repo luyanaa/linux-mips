@@ -22,6 +22,7 @@
 
 #include <asm/irq_cpu.h>
 #include <asm/mipsregs.h>
+#include <asm/processor.h>
 #include <asm/signal.h>
 #include <asm/time.h>
 #include <asm/ip32/crime.h>

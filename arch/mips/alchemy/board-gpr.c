@@ -48,14 +48,12 @@ static void gpr_reset(char *c)
 	alchemy_gpio_direction_output(1, 0);
 	udelay(1);
 	alchemy_gpio_set_value(1, 1);
-	while (1)
-		cpu_wait();
+	cpu_relax_forever();
 }
 
 static void gpr_power_off(void)
 {
-	while (1)
-		cpu_wait();
+	cpu_relax_forever();
 }
 
 void __init board_setup(void)

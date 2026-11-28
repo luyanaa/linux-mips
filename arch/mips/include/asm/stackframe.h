@@ -92,6 +92,14 @@
 		 */
 		jal     octeon_mult_save
 #endif
+#ifdef CONFIG_CPU_R5900
+		mfsa	v1
+		sd	v1, PT_SA(sp)
+		mfhi1	v1
+		sd	v1, PT_HI1(sp)
+		mflo1	v1
+		sd	v1, PT_LO1(sp)
+#endif
 		.endm
 
 		.macro	SAVE_STATIC docfi=0
@@ -116,6 +124,9 @@
 
 		/* SMP variation */
 		.macro	get_saved_sp docfi=0 tosp=0
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		ASM_CPUID_MFC0	k0, ASM_SMP_CPUID_REG
 #if defined(CONFIG_32BIT) || defined(KBUILD_64BIT_SYM32)
 		lui	k1, %hi(kernelsp)
@@ -140,6 +151,9 @@
 		.endm
 
 		.macro	set_saved_sp stackp temp temp2
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		ASM_CPUID_MFC0	\temp, ASM_SMP_CPUID_REG
 		LONG_SRL	\temp, SMP_CPUID_PTRSHIFT
 		LONG_S	\stackp, kernelsp(\temp)
@@ -165,6 +179,9 @@
 1:		move	ra, k0
 		li	k0, 3
 		mtc0	k0, $22
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 #endif /* CONFIG_CPU_JUMP_WORKAROUNDS */
 #if defined(CONFIG_32BIT) || defined(KBUILD_64BIT_SYM32)
 		lui	k1, %hi(kernelsp)
@@ -195,6 +212,9 @@
 		.set	push
 		.set	noat
 		.set	reorder
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	k0, CP0_STATUS
 		sll	k0, 3		/* extract cu0 bit */
 		.set	noreorder
@@ -251,15 +271,24 @@
 		 * need it to operate correctly
 		 */
 		LONG_S	$0, PT_R0(sp)
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	v1, CP0_STATUS
 		cfi_st	v0, PT_R2, \docfi
 		LONG_S	v1, PT_STATUS(sp)
 		cfi_st	$4, PT_R4, \docfi
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	v1, CP0_CAUSE
 		cfi_st	$5, PT_R5, \docfi
 		LONG_S	v1, PT_CAUSE(sp)
 		cfi_st	$6, PT_R6, \docfi
 		cfi_st	ra, PT_R31, \docfi
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		MFC0	ra, CP0_EPC
 		cfi_st	$7, PT_R7, \docfi
 #ifdef CONFIG_64BIT
@@ -273,6 +302,9 @@
 		cfi_st	$25, PT_R25, \docfi
 		cfi_st	$28, PT_R28, \docfi
 
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		/* Set thread_info if we're coming from user mode */
 		mfc0	k0, CP0_STATUS
 		sll	k0, 3		/* extract cu0 bit */
@@ -303,6 +335,14 @@
 		.endm
 
 		.macro	RESTORE_TEMP docfi=0
+#ifdef CONFIG_CPU_R5900
+		ld	v1, PT_LO1(sp)
+		mtlo1	v1
+		ld	v1, PT_HI1(sp)
+		mthi1	v1
+		ld	v1, PT_SA(sp)
+		mtsa	v1
+#endif
 #ifdef CONFIG_CPU_CAVIUM_OCTEON
 		/* Restore the Octeon multiplier state */
 		jal	octeon_mult_restore
@@ -352,6 +392,58 @@
 		cfi_ld	sp, PT_R29, \docfi
 		.endm
 
+#ifdef CONFIG_CPU_R5900
+		/*
+		 * Reset bits 127..64 of 128-bit multimedia registers.
+		 *
+		 * Bits 127..64 are not used by the kernel but can be modified
+		 * by applications using the R5900 specific multimedia
+		 * instructions. Clearing them prevents leaking information
+		 * between processes. This is a provisional measure until full
+		 * 128-bit registers are saved/restored, possibly using SQ/LQ.
+		 */
+		.macro	RESET_MMR
+		.set	push
+		.set	noreorder
+		.set	noat
+		pcpyld	$1, $0, $1
+		pcpyld	$2, $0, $2
+		pcpyld	$3, $0, $3
+		pcpyld	$4, $0, $4
+		pcpyld	$5, $0, $5
+		pcpyld	$6, $0, $6
+		pcpyld	$7, $0, $7
+		pcpyld	$8, $0, $8
+		pcpyld	$9, $0, $9
+		pcpyld	$10, $0, $10
+		pcpyld	$11, $0, $11
+		pcpyld	$12, $0, $12
+		pcpyld	$13, $0, $13
+		pcpyld	$14, $0, $14
+		pcpyld	$15, $0, $15
+		pcpyld	$16, $0, $16
+		pcpyld	$17, $0, $17
+		pcpyld	$18, $0, $18
+		pcpyld	$19, $0, $19
+		pcpyld	$20, $0, $20
+		pcpyld	$21, $0, $21
+		pcpyld	$22, $0, $22
+		pcpyld	$23, $0, $23
+		pcpyld	$24, $0, $24
+		pcpyld	$25, $0, $25
+		pcpyld	$26, $0, $26
+		pcpyld	$27, $0, $27
+		pcpyld	$28, $0, $28
+		pcpyld	$29, $0, $29
+		pcpyld	$30, $0, $30
+		pcpyld	$31, $0, $31
+		.set	pop
+		.endm
+#else
+		.macro	RESET_MMR
+		.endm
+#endif
+
 #if defined(CONFIG_CPU_R3000)
 
 		.macro	RESTORE_SOME docfi=0
@@ -396,10 +488,17 @@
 		.set	push
 		.set	reorder
 		.set	noat
+		RESET_MMR
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	a0, CP0_STATUS
 		ori	a0, STATMASK
 		xori	a0, STATMASK
 		mtc0	a0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		li	v1, ST0_CU1 | ST0_FR | ST0_IM
 		and	a0, v1
 		LONG_L	v0, PT_STATUS(sp)
@@ -407,8 +506,14 @@
 		and	v0, v1
 		or	v0, a0
 		mtc0	v0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		LONG_L	v1, PT_EPC(sp)
 		MTC0	v1, CP0_EPC
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		cfi_ld	$31, PT_R31, \docfi
 		cfi_ld	$28, PT_R28, \docfi
 		cfi_ld	$25, PT_R25, \docfi
@@ -452,11 +557,17 @@
  * Set cp0 enable bit as sign that we're running on the kernel stack
  */
 		.macro	CLI
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	t0, CP0_STATUS
 		li	t1, ST0_KERNEL_CUMASK | STATMASK
 		or	t0, t1
 		xori	t0, STATMASK
 		mtc0	t0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		irq_disable_hazard
 		.endm
 
@@ -465,11 +576,17 @@
  * Set cp0 enable bit as sign that we're running on the kernel stack
  */
 		.macro	STI
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	t0, CP0_STATUS
 		li	t1, ST0_KERNEL_CUMASK | STATMASK
 		or	t0, t1
 		xori	t0, STATMASK & ~1
 		mtc0	t0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		irq_enable_hazard
 		.endm
 
@@ -479,6 +596,9 @@
  * Set cp0 enable bit as sign that we're running on the kernel stack
  */
 		.macro	KMODE
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		mfc0	t0, CP0_STATUS
 		li	t1, ST0_KERNEL_CUMASK | (STATMASK & ~1)
 #if defined(CONFIG_CPU_R3000)
@@ -489,6 +609,9 @@
 		or	t0, t1
 		xori	t0, STATMASK & ~1
 		mtc0	t0, CP0_STATUS
+#ifdef CONFIG_CPU_R5900
+		sync.p
+#endif
 		irq_disable_hazard
 		.endm
 

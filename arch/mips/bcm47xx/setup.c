@@ -85,8 +85,8 @@ static void bcm47xx_machine_restart(char *command)
 		break;
 #endif
 	}
-	while (1)
-		cpu_relax();
+
+	cpu_relax_forever();
 }
 
 static void bcm47xx_machine_halt(void)
@@ -105,8 +105,8 @@ static void bcm47xx_machine_halt(void)
 		break;
 #endif
 	}
-	while (1)
-		cpu_relax();
+
+	cpu_relax_forever();
 }
 
 #ifdef CONFIG_BCM47XX_SSB

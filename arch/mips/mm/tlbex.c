@@ -467,6 +467,19 @@ static void __maybe_unused build_tlb_probe_entry(u32 **p)
 		uasm_i_tlbp(p);
 		break;
 
+	case CPU_R5900:
+		/*
+		 * On the R5900, the TLBP instruction must be immediately
+		 * followed by an ERET or a SYNC.P instruction.
+		 */
+		uasm_i_tlbp(p);
+		uasm_i_syncp(p);
+		uasm_i_nop(p);
+		uasm_i_nop(p);
+		uasm_i_nop(p);
+		uasm_i_nop(p);
+		break;
+
 	default:
 		uasm_i_tlbp(p);
 		break;
@@ -566,6 +579,15 @@ void build_tlb_write_entry(u32 **p, struct uasm_label **l,
 		uasm_i_nop(p);
 		tlbw(p);
 		break;
+	case CPU_R5900:
+		/*
+		 * On the R5900, the TLBWI and TLBWR instructions must be
+		 * followed by an ERET or a SYNC.P instruction to ensure a
+		 * TLB update.
+		 */
+		tlbw(p);
+		uasm_i_syncp(p);
+		break;
 
 	case CPU_XBURST:
 		tlbw(p);
@@ -653,6 +675,9 @@ static void build_restore_pagemask(u32 **p, struct uasm_reloc **r,
 			uasm_i_mtc0(p, 0, C0_PAGEMASK);
 		}
 	}
+#ifdef CONFIG_CPU_R5900
+	uasm_i_syncp(p);
+#endif
 }
 
 static void build_huge_tlb_write_entry(u32 **p, struct uasm_label **l,
@@ -665,6 +690,9 @@ static void build_huge_tlb_write_entry(u32 **p, struct uasm_label **l,
 	uasm_i_lui(p, tmp, PM_HUGE_MASK >> 16);
 	uasm_i_ori(p, tmp, tmp, PM_HUGE_MASK & 0xffff);
 	uasm_i_mtc0(p, tmp, C0_PAGEMASK);
+#ifdef CONFIG_CPU_R5900
+	uasm_i_syncp(p);
+#endif
 
 	build_tlb_write_entry(p, l, r, wmode);
 
@@ -927,21 +955,21 @@ void build_get_pgde32(u32 **p, unsigned int tmp, unsigned int ptr)
 {
 	if (pgd_reg != -1) {
 		/* pgd is in pgd_reg */
-		uasm_i_mfc0(p, ptr, c0_kscratch(), pgd_reg);
-		uasm_i_mfc0(p, tmp, C0_BADVADDR); /* get faulting address */
+		UASM_i_MFC0(p, ptr, c0_kscratch(), pgd_reg);
+		UASM_i_MFC0(p, tmp, C0_BADVADDR); /* get faulting address */
 	} else {
 		long pgdc = (long)pgd_current;
 
 		/* 32 bit SMP has smp_processor_id() stored in CONTEXT. */
 #ifdef CONFIG_SMP
-		uasm_i_mfc0(p, ptr, SMP_CPUID_REG);
+		UASM_i_MFC0(p, ptr, SMP_CPUID_REG);
 		UASM_i_LA_mostly(p, tmp, pgdc);
 		uasm_i_srl(p, ptr, ptr, SMP_CPUID_PTRSHIFT);
 		uasm_i_addu(p, ptr, tmp, ptr);
 #else
 		UASM_i_LA_mostly(p, ptr, pgdc);
 #endif
-		uasm_i_mfc0(p, tmp, C0_BADVADDR); /* get faulting address */
+		UASM_i_MFC0(p, tmp, C0_BADVADDR); /* get faulting address */
 		uasm_i_lw(p, ptr, uasm_rel_lo(pgdc), ptr);
 	}
 	uasm_i_srl(p, tmp, tmp, PGDIR_SHIFT); /* get pgd only bits */
@@ -1256,6 +1284,12 @@ static void build_r4000_tlb_refill_handler(void)
 	memset(relocs, 0, sizeof(relocs));
 	memset(final_handler, 0, sizeof(final_handler));
 
+#ifdef CONFIG_CPU_R5900
+	/* Workaround for R5900 exception execution bug (FLX05). */
+	uasm_i_nop(&p);
+	uasm_i_nop(&p);
+#endif
+
 	if (IS_ENABLED(CONFIG_64BIT) && (scratch_reg >= 0 || scratchpad_available()) && use_bbit_insns()) {
 		htlb_info = build_fast_tlb_refill_handler(&p, &l, &r, GPR_K0, GPR_K1,
 							  scratch_reg);
@@ -1298,6 +1332,16 @@ static void build_r4000_tlb_refill_handler(void)
 		uasm_l_leave(&l, p);
 		uasm_i_eret(&p); /* return from trap */
 	}
+
+#ifdef CONFIG_CPU_R5900
+	/* There should be nothing which can be interpreted as cache instruction. */
+	uasm_i_nop(&p);
+	uasm_i_nop(&p);
+	uasm_i_nop(&p);
+	uasm_i_nop(&p);
+	uasm_i_nop(&p);
+#endif
+
 #ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
 	uasm_l_tlb_huge_update(&l, p);
 	if (htlb_info.need_reload_pte)
@@ -1319,6 +1363,10 @@ static void build_r4000_tlb_refill_handler(void)
 	 * unused.
 	 */
 	switch (boot_cpu_type()) {
+	case CPU_R5900:
+		if ((p - tlb_handler) > 32)
+			panic("TLB refill handler space exceeded");
+		fallthrough;
 	default:
 		if (sizeof(long) == 4) {
 		fallthrough;
@@ -1418,9 +1466,9 @@ static void build_r4000_tlb_refill_handler(void)
 	pr_debug("Wrote TLB refill handler (%u instructions).\n",
 		 final_len);
 
-	memcpy((void *)ebase, final_handler, 0x100);
-	local_flush_icache_range(ebase, ebase + 0x100);
-	dump_handler("r4000_tlb_refill", (u32 *)ebase, (u32 *)(ebase + 0x100));
+	memcpy((void *)ebase, final_handler, 4 * final_len);
+	local_flush_icache_range(ebase, ebase + 4 * final_len);
+	dump_handler("r4000_tlb_refill", (u32 *)ebase, (u32 *)(ebase + 4 * final_len));
 }
 
 static void setup_pw(void)
@@ -2045,6 +2093,14 @@ build_r4000_tlbchange_handler_tail(u32 **p, struct uasm_label **l,
 	uasm_l_leave(l, *p);
 	build_restore_work_registers(p);
 	uasm_i_eret(p); /* return from trap */
+#ifdef CONFIG_CPU_R5900
+	/* There should be nothing which can be interpreted as cache instruction. */
+	uasm_i_nop(p);
+	uasm_i_nop(p);
+	uasm_i_nop(p);
+	uasm_i_nop(p);
+	uasm_i_nop(p);
+#endif
 
 #ifdef CONFIG_64BIT
 	build_get_pgd_vmalloc64(p, l, r, tmp, ptr, not_refill);
@@ -2104,6 +2160,18 @@ static void build_r4000_tlb_load_handler(void)
 		WARN(cpu_has_tlbex_tlbp_race(), "Unhandled race in RiXi path");
 
 		uasm_i_tlbr(&p);
+
+#ifdef CONFIG_CPU_R5900
+		/*
+		 * On the R5900, the TLBR instruction must be immediately
+		 * followed by an ERET or a SYNC.P instruction.
+		 */
+		uasm_i_syncp(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+#endif
 
 		if (cpu_has_mips_r2_exec_hazard)
 			uasm_i_ehb(&p);
@@ -2170,6 +2238,18 @@ static void build_r4000_tlb_load_handler(void)
 		WARN(cpu_has_tlbex_tlbp_race(), "Unhandled race in RiXi path");
 
 		uasm_i_tlbr(&p);
+
+#ifdef CONFIG_CPU_R5900
+		/*
+		 * On the R5900, the TLBR instruction must be immediately
+		 * followed by an ERET or a SYNC.P instruction.
+		 */
+		uasm_i_syncp(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+		uasm_i_nop(&p);
+#endif
 
 		if (cpu_has_mips_r2_exec_hazard)
 			uasm_i_ehb(&p);

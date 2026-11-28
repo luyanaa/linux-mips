@@ -65,4 +65,6 @@ asmlinkage void cache_parity_error(void);
 asmlinkage void ejtag_exception_handler(struct pt_regs *regs);
 asmlinkage void __noreturn nmi_exception_handler(struct pt_regs *regs);
 
+int simulate_rdhwr(struct pt_regs *regs, int rd, int rt);
+
 #endif /* _ASM_TRAPS_H */

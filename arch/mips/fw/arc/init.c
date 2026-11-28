@@ -11,6 +11,7 @@
 #include <linux/kernel.h>
 
 #include <asm/bootinfo.h>
+#include <asm/processor.h>
 #include <asm/sgialib.h>
 #include <asm/smp-ops.h>
 

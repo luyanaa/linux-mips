@@ -32,6 +32,14 @@
 NESTED(except_vec3_generic, 0, sp)
 	.set	push
 	.set	noat
+#ifdef CONFIG_CPU_R5900
+	/* Workaround for R5900 exception execution bug (FLX05). */
+	nop
+	nop
+#endif
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k1, CP0_CAUSE
 	andi	k1, k1, 0x7c
 #ifdef CONFIG_64BIT
@@ -52,6 +60,9 @@ NESTED(except_vec3_r4000, 0, sp)
 	.set	push
 	.set	arch=r4000
 	.set	noat
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k1, CP0_CAUSE
 	li	k0, 31<<2
 	andi	k1, k1, 0x7c
@@ -75,10 +86,16 @@ NESTED(except_vec3_r4000, 0, sp)
 	 * load / store will be re-executed.
 	 */
 handle_vced:
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_BADVADDR
 	li	k1, -4					# Is this ...
 	and	k0, k1					# ... really needed?
 	mtc0	zero, CP0_TAGLO
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	cache	Index_Store_Tag_D, (k0)
 	cache	Hit_Writeback_Inv_SD, (k0)
 #ifdef CONFIG_PROC_FS
@@ -90,6 +107,9 @@ handle_vced:
 	eret
 
 handle_vcei:
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_BADVADDR
 	cache	Hit_Writeback_Inv_SD, (k0)		# also cleans pi
 #ifdef CONFIG_PROC_FS
@@ -111,7 +131,17 @@ LEAF(r4k_wait)
 	/* Keep the ISA bit clear for calculations on local labels here. */
 0:	.fill	0
 	/* Start of idle interrupt region. */
+#ifdef CONFIG_CPU_R5900
+	/*
+	 * The R5900 has no WAIT instruction and never enters this path, so
+	 * keep the idle interrupt region small enough for the rollback mask.
+	 */
+	mfc0	t0, CP0_STATUS
+	ori	t0, t0, 1
+	mtc0	t0, CP0_STATUS
+#else
 	local_irq_enable
+#endif
 	/*
 	 * If an interrupt lands here, before going idle on the next
 	 * instruction, we must *NOT* go idle since the interrupt could
@@ -143,6 +173,9 @@ r4k_wait_exit:
 	FEXPORT(skipover_\handler)
 	.set	push
 	.set	noat
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_EPC
 	/* Subtract/add 2 to let the ISA bit propagate through the mask.  */
 	PTR_LA	k1, r4k_wait_insn - 2
@@ -152,6 +185,9 @@ r4k_wait_exit:
 	 PTR_ADDIU	k0, r4k_wait_exit - r4k_wait_insn + 2
 	.set	reorder
 	MTC0	k0, CP0_EPC
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	.set pop
 	.endm
 
@@ -172,11 +208,17 @@ NESTED(handle_int, PT_SIZE, sp)
 	 */
 	.set	push
 	.set	noat
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k0, CP0_STATUS
 #if defined(CONFIG_CPU_R3000)
 	and	k0, ST0_IEP
 	bnez	k0, 1f
 
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k0, CP0_EPC
 	.set	noreorder
 	j	k0
@@ -357,6 +399,9 @@ NESTED(ejtag_debug_handler, PT_SIZE, sp)
 	.set	push
 	.set	noat
 	MTC0	k0, CP0_DESAVE
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k0, CP0_DEBUG
 
 	andi	k0, k0, MIPS_DEBUG_DBP	# Check for SDBBP.
@@ -413,6 +458,9 @@ NESTED(ejtag_debug_handler, PT_SIZE, sp)
 
 ejtag_return:
 	back_to_back_c0_hazard
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_DESAVE
 	.set	mips32
 	deret
@@ -503,6 +551,9 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	.endm
 
 	.macro	__build_clear_ade
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	t0, CP0_BADVADDR
 	PTR_S	t0, PT_BVADDR(sp)
 	KMODE
@@ -602,16 +653,28 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	.set	noat
 	.set	noreorder
 	/* check if TLB contains a entry for EPC */
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k1, CP0_ENTRYHI
 	andi	k1, MIPS_ENTRYHI_ASID | MIPS_ENTRYHI_ASIDX
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_EPC
 	PTR_SRL	k0, _PAGE_SHIFT + 1
 	PTR_SLL	k0, _PAGE_SHIFT + 1
 	or	k1, k0
 	MTC0	k1, CP0_ENTRYHI
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mtc0_tlbw_hazard
 	tlbp
 	tlb_probe_hazard
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	mfc0	k1, CP0_INDEX
 	.set	pop
 	bltz	k1, handle_ri	/* slow path */
@@ -624,6 +687,9 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	.set	noreorder
 	/* MIPS32:    0x7c03e83b: rdhwr v1,$29 */
 	/* microMIPS: 0x007d6b3c: rdhwr v1,$29 */
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k1, CP0_EPC
 #if defined(CONFIG_CPU_MICROMIPS) || defined(CONFIG_CPU_MIPS32_R2) || defined(CONFIG_CPU_MIPS64_R2)
 	and	k0, k1, 1
@@ -654,6 +720,9 @@ isrdhwr:
 	/* The insn is rdhwr.  No need to check CAUSE.BD here. */
 	get_saved_sp	/* k1 := current_thread_info */
 	.set	noreorder
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	MFC0	k0, CP0_EPC
 #if defined(CONFIG_CPU_R3000)
 	ori	k1, _THREAD_MASK
@@ -671,6 +740,9 @@ isrdhwr:
 	.set	noat
 #endif
 	MTC0	k0, CP0_EPC
+#ifdef CONFIG_CPU_R5900
+	sync.p
+#endif
 	/* I hope three instructions between MTC0 and ERET are enough... */
 	ori	k1, _THREAD_MASK
 	xori	k1, _THREAD_MASK

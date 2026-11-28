@@ -634,7 +634,7 @@ static int simulate_llsc(struct pt_regs *regs, unsigned int opcode)
  * Simulate trapping 'rdhwr' instructions to provide user accessible
  * registers not implemented in hardware.
  */
-static int simulate_rdhwr(struct pt_regs *regs, int rd, int rt)
+int simulate_rdhwr(struct pt_regs *regs, int rd, int rt)
 {
 	struct thread_info *ti = task_thread_info(current);
 
@@ -2043,6 +2043,12 @@ void __init *set_except_vector(int n, void *addr)
 		unsigned long jump_mask = ~((1 << 28) - 1);
 #endif
 		u32 *buf = (u32 *)(ebase + 0x200);
+
+#ifdef CONFIG_CPU_R5900
+		/* Workaround for R5900 exception execution bug (FLX05). */
+		uasm_i_nop(&buf);
+		uasm_i_nop(&buf);
+#endif
 		if ((handler & jump_mask) == ((ebase + 0x200) & jump_mask)) {
 			uasm_i_j(&buf, handler & ~jump_mask);
 			uasm_i_nop(&buf);
@@ -2051,6 +2057,17 @@ void __init *set_except_vector(int n, void *addr)
 			uasm_i_jr(&buf, GPR_K0);
 			uasm_i_nop(&buf);
 		}
+#ifdef CONFIG_CPU_R5900
+		/*
+		 * Data that could be interpreted as cache instructions
+		 * is not allowed after the jump.
+		 */
+		uasm_i_nop(&buf);
+		uasm_i_nop(&buf);
+		uasm_i_nop(&buf);
+		uasm_i_nop(&buf);
+		uasm_i_nop(&buf);
+#endif
 		local_flush_icache_range(ebase + 0x200, (unsigned long)buf);
 	}
 	return (void *)old_handler;

@@ -42,8 +42,33 @@ extern void (*r4k_blast_icache)(void);
  *  - We need a properly sign extended address for 64-bit code.	 To get away
  *    without ifdefs we let the compiler do it by a type cast.
  */
+#ifdef CONFIG_CPU_R5900
+/* MSB must be 0 for the instruction cache due to an R5900 bug. */
+#define INDEX_BASE	0
+#else
 #define INDEX_BASE	CKSEG0
+#endif
 
+#ifdef CONFIG_CPU_R5900
+/*
+ * The R5900 needs both SYNC.L (load/store) and SYNC.P (pipeline) barriers
+ * around cache operations.  Classifying every call site as data or
+ * instruction cache is error prone, so over-synchronize here.
+ */
+#define _cache_op(insn, op, addr)					\
+	__asm__ __volatile__(						\
+	"	.set	push					\n"	\
+	"	.set	noreorder				\n"	\
+	"	.set	mips3					\n"	\
+	"	sync.p						\n"	\
+	"	sync.l						\n"	\
+	"	" insn("%0", "%1") "				\n"	\
+	"	sync.l						\n"	\
+	"	sync.p						\n"	\
+	"	.set	pop					\n"	\
+	:								\
+	: "i" (op), "R" (*(unsigned char *)(addr)))
+#else
 #define _cache_op(insn, op, addr)					\
 	__asm__ __volatile__(						\
 	"	.set	push					\n"	\
@@ -53,9 +78,18 @@ extern void (*r4k_blast_icache)(void);
 	"	.set	pop					\n"	\
 	:								\
 	: "i" (op), "R" (*(unsigned char *)(addr)))
+#endif
 
 #define cache_op(op, addr)						\
 	_cache_op(kernel_cache, op, addr)
+
+/*
+ * The R5900 variant over-synchronizes all cache operations in _cache_op(),
+ * so the data/instruction/scache variants are currently aliases.
+ */
+#define cache_op_d(op, addr)	cache_op(op, addr)
+#define cache_op_i(op, addr)	cache_op(op, addr)
+#define cache_op_s(op, addr)	cache_op(op, addr)
 
 static inline void flush_icache_line_indexed(unsigned long addr)
 {
