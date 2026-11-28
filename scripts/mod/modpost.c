@@ -1098,6 +1098,30 @@ static void check_export_symbol(struct module *mod, struct elf_info *elf,
 	label = find_fromsym(elf, faddr, elf->export_symbol_secndx);
 	label_name = sym_name(elf, label);
 
+	/*
+	 * Some MIPS toolchains place the section symbol at the same address as
+	 * the first export label, and the nearest-symbol lookup then returns the
+	 * section symbol. Fall back to an explicit scan for the label.
+	 */
+	if (!strstarts(label_name, prefix)) {
+		Elf_Sym *alt, *best = NULL;
+
+		for (alt = elf->symtab_start; alt < elf->symtab_stop; alt++) {
+			if (ELF_ST_TYPE(alt->st_info) == STT_SECTION)
+				continue;
+			if (alt->st_value > faddr)
+				continue;
+			if (!strstarts(sym_name(elf, alt), prefix))
+				continue;
+			if (!best || alt->st_value > best->st_value)
+				best = alt;
+		}
+		if (best) {
+			label = best;
+			label_name = sym_name(elf, best);
+		}
+	}
+
 	if (!strstarts(label_name, prefix)) {
 		mod_error(mod, ".export_symbol section contains strange symbol '%s'\n",
 			  label_name);
