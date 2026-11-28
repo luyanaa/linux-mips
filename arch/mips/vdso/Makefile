@@ -110,7 +110,11 @@ $(obj)/vdso-image.c: $(obj)/vdso.so.dbg.raw $(obj)/vdso.so.raw \
                      $(obj)/genvdso FORCE
 	$(call if_changed,genvdso)
 
+ifdef CONFIG_CPU_R5900
+obj-y += vdso-stub.o
+else
 obj-y += vdso-image.o
+endif
 
 #
 # Build O32 VDSO.

@@ -12,6 +12,8 @@
 OUTPUT_FORMAT("elf64-tradlittlemips", "elf64-tradbigmips", "elf64-tradlittlemips")
 #elif _MIPS_SIM == _MIPS_SIM_NABI32
 OUTPUT_FORMAT("elf32-ntradlittlemips", "elf32-ntradbigmips", "elf32-ntradlittlemips")
+#elif defined(CONFIG_CPU_R5900)
+OUTPUT_FORMAT("elf32-littlemips", "elf32-bigmips", "elf32-littlemips")
 #else
 OUTPUT_FORMAT("elf32-tradlittlemips", "elf32-tradbigmips", "elf32-tradlittlemips")
 #endif
