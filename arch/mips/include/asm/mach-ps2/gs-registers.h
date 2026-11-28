@@ -278,7 +278,7 @@ struct gs_syncv {
 
 /**
  * struct gs_dispfb - DISPFB privileged Graphics Synthesizer register
- * @fbp: base pointer address/2048
+ * @fbp: base pointer address/8192
  * @fbw: buffer width/64
  * @psm: pixel storage format FIXME
  * @dbx: upper left x position

@@ -19,7 +19,36 @@
 #include <asm/mach-ps2/gs-registers.h>
 
 #include "gs_crtc.h"
-#include "gs_drm.h"
+
+/**
+ * struct gs_video_mode - video timings in Graphics Synthesizer units
+ * @name: human readable mode name
+ * @xres: visible width in pixels
+ * @yres: visible height in pixels
+ * @pixclock: pixel clock period in picoseconds
+ * @left_margin: horizontal front porch in pixels
+ * @right_margin: horizontal back porch in pixels
+ * @upper_margin: vertical front porch in lines
+ * @lower_margin: vertical back porch in lines
+ * @hsync_len: horizontal sync pulse width in pixels
+ * @vsync_len: vertical sync pulse width in lines
+ * @broadcast: %true for PAL, NTSC and other broadcast video modes
+ * @interlaced: %true for interlaced video modes
+ */
+struct gs_video_mode {
+	const char *name;
+	u32 xres;
+	u32 yres;
+	u32 pixclock;
+	u32 left_margin;
+	u32 right_margin;
+	u32 upper_margin;
+	u32 lower_margin;
+	u32 hsync_len;
+	u32 vsync_len;
+	bool broadcast;
+	bool interlaced;
+};
 
 /**
  * struct gs_sync_param - Graphics Synthesizer registers for video modes
@@ -50,7 +79,7 @@ struct gs_sync_param {
  *
  * Result: PAL, NTSC or VESA
  */
-static enum gs_smode1_cmod vm_to_cmod(const struct fb_videomode *vm)
+static enum gs_smode1_cmod vm_to_cmod(const struct gs_video_mode *vm)
 {
 	const u32 htotal = vm->hsync_len +
 		vm->left_margin + vm->xres + vm->right_margin;
@@ -58,10 +87,10 @@ static enum gs_smode1_cmod vm_to_cmod(const struct fb_videomode *vm)
 		vm->upper_margin + vm->yres + vm->lower_margin;
 	const u32 ptotal = htotal * vtotal;
 	const u32 refresh = DIV_ROUND_CLOSEST_ULL(DIV_ROUND_CLOSEST_ULL(
-		1000000000000ull * ((vm->vmode & FB_VMODE_INTERLACED) ? 2 : 1),
+		1000000000000ull * (vm->interlaced ? 2 : 1),
 		vm->pixclock), ptotal);
 
-	if (vm->sync & FB_SYNC_BROADCAST)
+	if (vm->broadcast)
 		return refresh < 55 ? gs_cmod_pal :
 		       refresh < 65 ? gs_cmod_ntsc :
 				      gs_cmod_vesa;
@@ -90,10 +119,10 @@ static enum gs_smode1_cmod vm_to_cmod(const struct fb_videomode *vm)
  *
  * Return: Graphics Synthesizer SDTV video mode synchronisation parameters
  */
-static struct gs_sync_param vm_to_sp_sdtv(const struct fb_videomode *vm)
+static struct gs_sync_param vm_to_sp_sdtv(const struct gs_video_mode *vm)
 {
 	const u32 cmod = vm_to_cmod(vm);
-	const u32 intm = (vm->vmode & FB_VMODE_INTERLACED) ? 1 : 0;
+	const u32 intm = vm->interlaced ? 1 : 0;
 	const u32 vs   = cmod == gs_cmod_pal ? 5 : 6;
 	const u32 hb   = cmod == gs_cmod_pal ? 1680 : 1652;
 	const u32 hf   = 2892 - hb;
@@ -104,7 +133,7 @@ static struct gs_sync_param vm_to_sp_sdtv(const struct fb_videomode *vm)
 	const u32 vbpe = vs;
 	const u32 vbp  = cmod == gs_cmod_pal ? 33 : 26;
 	const u32 vfpe = vs;
-	const u32 vfp  = (vm->vmode & FB_VMODE_INTERLACED) ? 1 :
+	const u32 vfp  = vm->interlaced ? 1 :
 		cmod == gs_cmod_pal ? 4 : 2;
 	const u32 tw = hb + hf;
 	const u32 th = vdp;
@@ -180,7 +209,7 @@ static struct gs_sync_param vm_to_sp_sdtv(const struct fb_videomode *vm)
  * Return: Graphics Synthesizer HDTV video mode synchronisation parameters
  */
 static struct gs_sync_param vm_to_sp_hdtv(
-	const struct fb_videomode *vm, const struct gs_synch_gen sg)
+	const struct gs_video_mode *vm, const struct gs_synch_gen sg)
 {
 	const u32 spml  = sg.spml;
 	const u32 t1248 = sg.t1248;
@@ -188,7 +217,7 @@ static struct gs_sync_param vm_to_sp_hdtv(
 	const u32 rc    = sg.rc;
 	const u32 vc    = vm->yres <= 576 ? 1 : 0;
 	const u32 hadj  = spml / 2;
-	const u32 vhp   = (vm->vmode & FB_VMODE_INTERLACED) ? 0 : 1;
+	const u32 vhp   = vm->interlaced ? 0 : 1;
 	const u32 hb    = vm->xres * spml * 3 / 5;
 
 	return (struct gs_sync_param) {
@@ -201,7 +230,7 @@ static struct gs_sync_param vm_to_sp_hdtv(
 			.lc     =  lc, .rc     = rc
 		},
 		.smode2 = {
-			.intm = (vm->vmode & FB_VMODE_INTERLACED) ? 1 : 0
+			.intm = vm->interlaced ? 1 : 0
 		},
 		.srfsh = {
 			.rfsh = gs_rfsh_from_synch_gen(sg)
@@ -256,14 +285,14 @@ static struct gs_sync_param vm_to_sp_hdtv(
  * Return: Graphics Synthesizer VESA display mode synchronisation parameters
  */
 static struct gs_sync_param vm_to_sp_vesa(
-	const struct fb_videomode *vm, const struct gs_synch_gen sg)
+	const struct gs_video_mode *vm, const struct gs_synch_gen sg)
 {
 	const u32 spml  = sg.spml;
 	const u32 t1248 = sg.t1248;
 	const u32 lc    = sg.lc;
 	const u32 rc    = sg.rc;
 	const u32 hadj  = spml / 2;
-	const u32 vhp   = (vm->vmode & FB_VMODE_INTERLACED) ? 0 : 1;
+	const u32 vhp   = vm->interlaced ? 0 : 1;
 	const u32 hb    = vm->xres * spml * 3 / 5;
 
 	return (struct gs_sync_param) {
@@ -276,7 +305,7 @@ static struct gs_sync_param vm_to_sp_vesa(
 			.lc     =  lc, .rc     = rc
 		},
 		.smode2 = {
-			.intm = (vm->vmode & FB_VMODE_INTERLACED) ? 1 : 0
+			.intm = vm->interlaced ? 1 : 0
 		},
 		.srfsh = {
 			.rfsh = gs_rfsh_from_synch_gen(sg)
@@ -313,10 +342,10 @@ static struct gs_sync_param vm_to_sp_vesa(
 }
 
 static struct gs_sync_param vm_to_sp_for_synch_gen(
-	const struct fb_videomode *vm, const struct gs_synch_gen sg)
+	const struct gs_video_mode *vm, const struct gs_synch_gen sg)
 {
-	const bool bc = vm->sync & FB_SYNC_BROADCAST;
-	const bool il = vm->vmode & FB_VMODE_INTERLACED;
+	const bool bc = vm->broadcast;
+	const bool il = vm->interlaced;
 	struct gs_sync_param sp =
 		vm->yres <= 288 &&       bc ? vm_to_sp_sdtv(vm) :
 		vm->yres <= 576 && il && bc ? vm_to_sp_sdtv(vm) :
@@ -330,12 +359,12 @@ static struct gs_sync_param vm_to_sp_for_synch_gen(
 	return sp;
 }
 
-static struct gs_sync_param vm_to_sp(const struct fb_videomode *vm)
+static struct gs_sync_param vm_to_sp(const struct gs_video_mode *vm)
 {
 	return vm_to_sp_for_synch_gen(vm, gs_synch_gen_for_vck(vm->pixclock));
 }
 
-static int ps2fb_set_par(const struct fb_videomode *vm)
+static int gs_mode_program(const struct gs_video_mode *vm)
 {
 	const struct gs_sync_param sp = vm_to_sp(vm);
 	struct gs_smode1 smode1 = sp.smode1;
@@ -395,12 +424,9 @@ static void gs_atomic_flush(struct drm_crtc *crtc,
 	const struct drm_crtc_state *crtc_state = crtc->state;
 	(void)state;
 	const struct drm_display_mode *mode = &crtc_state->mode;
-	struct gs_device *gs = container_of(crtc, struct gs_device, crtc);
-	struct fb_var_screeninfo *var = &gs->info->var;
 
-	const struct fb_videomode vm = {
+	const struct gs_video_mode vm = {
 		.name = mode->name,
-		.refresh = drm_mode_vrefresh(mode),
 		.xres = mode->crtc_hdisplay,
 		.yres = mode->crtc_vdisplay,
 		.left_margin = mode->crtc_htotal - mode->crtc_hsync_end,
@@ -410,11 +436,9 @@ static void gs_atomic_flush(struct drm_crtc *crtc,
 		.hsync_len = mode->crtc_hsync_end - mode->crtc_hsync_start, // FIXME: .right_margin?
 		.vsync_len = mode->crtc_vsync_end - mode->crtc_vsync_start,
 		.pixclock = DIV_ROUND_CLOSEST_ULL(1000000000ull, mode->crtc_clock),
-		.sync = mode->flags & DRM_MODE_FLAG_BCAST ? FB_SYNC_BROADCAST : 0,
-		.vmode = mode->flags & DRM_MODE_FLAG_INTERLACE ? FB_VMODE_INTERLACED : 0,
+		.broadcast = mode->flags & DRM_MODE_FLAG_BCAST,
+		.interlaced = mode->flags & DRM_MODE_FLAG_INTERLACE,
 	};
-
-	fb_videomode_to_var(var, &vm);
 
 	printk("drm: %s name %s %u %u %u %u %u %u %u %u %u\n",
 		__func__,
@@ -430,7 +454,7 @@ static void gs_atomic_flush(struct drm_crtc *crtc,
 		vm.vsync_len);
 
 	if (drm_atomic_crtc_needs_modeset(crtc_state))
-		ps2fb_set_par(&vm);
+		gs_mode_program(&vm);
 }
 
 static enum drm_mode_status gs_mode_valid(struct drm_crtc *crtc,

@@ -12,6 +12,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_device.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_vblank.h>
 #include <drm/drm_modeset_helper_vtables.h>
 #include <drm/drm_atomic.h>
@@ -69,11 +70,31 @@ static void gs_plane_atomic_update(struct drm_plane *plane,
 		return;
 
 	pstate = drm_atomic_get_plane_state(state, plane);
-	if (IS_ERR_OR_NULL(pstate) || !pstate->fb)
+	if (IS_ERR_OR_NULL(pstate))
 		return;
+
+	if (!pstate->fb) {
+		if (gs->scanout) {
+			drm_framebuffer_put(gs->scanout);
+			gs->scanout = NULL;
+		}
+		return;
+	}
 
 	gs_upload_fb(gs, pstate->fb);
 	gs_set_scanout(gs, pstate->fb);
+
+	/*
+	 * Keep a reference for validated submissions: the driver binds this
+	 * buffer as FRAME for every display list, so user space never has to
+	 * know the framebuffer address.
+	 */
+	if (gs->scanout != pstate->fb) {
+		drm_framebuffer_get(pstate->fb);
+		if (gs->scanout)
+			drm_framebuffer_put(gs->scanout);
+		gs->scanout = pstate->fb;
+	}
 	struct drm_crtc *crtc = &gs->crtc;
 
 	printk("drm: %s\n", __func__);
@@ -103,9 +124,11 @@ static void gs_plane_atomic_update(struct drm_plane *plane,
 }
 
 static const u32 gs_pixel_formats[] = {
-	DRM_FORMAT_RGBA8888,	/* RGBA32 */
-	DRM_FORMAT_RGBX8888,	/* RGB24 */
-	DRM_FORMAT_RGBA5551,	/* RGBA16 */
+	DRM_FORMAT_XRGB8888,	/* RGB32, fbdev emulation, swizzled */
+	DRM_FORMAT_XBGR8888,	/* RGBA32 */
+	DRM_FORMAT_ABGR8888,	/* RGBA32 */
+	DRM_FORMAT_ABGR1555,	/* RGBA16 */
+	DRM_FORMAT_XBGR1555,	/* RGB16 */
 };
 
 static const struct drm_plane_helper_funcs gs_plane_helper_funcs = {

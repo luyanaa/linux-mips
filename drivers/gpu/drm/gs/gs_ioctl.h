@@ -5,7 +5,7 @@
 #include <drm/drm_ioctl.h>
 
 extern const struct drm_ioctl_desc gs_ioctls[];
-#define GS_IOCTL_COUNT 3
+#define GS_IOCTL_COUNT 5
 
 #endif /* GS_IOCTL_H */
 

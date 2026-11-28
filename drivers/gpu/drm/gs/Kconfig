@@ -6,7 +6,7 @@ config DRM_GS
 	select DRM_KMS_HELPER
 	select DRM_GEM_SHMEM_HELPER
 	select PS2_GS
-	select FB_TILEBLITTING
+	select DRM_CLIENT_SELECTION
 	default n
 	help
 	  Direct Rendering Manager driver for the PlayStation 2 Graphics

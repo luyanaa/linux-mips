@@ -20,6 +20,14 @@ static void gs_gem_free(struct drm_gem_object *obj)
 	if (gs && gs_obj->vram)
 		gs_vram_free(&gs->vram, gs_obj->vram);
 
+	if (gs && gs_obj->res.valid) {
+		if (gs_obj->res.data)
+			gs_vram_free(&gs->vram, gs_obj->res.data);
+		if (gs_obj->res.clut)
+			gs_vram_free(&gs->vram, gs_obj->res.clut);
+		gs_obj->res.valid = false;
+	}
+
 	drm_gem_shmem_free(&gs_obj->base);
 }
 

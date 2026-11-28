@@ -13,6 +13,7 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_shmem_helper.h>
+#include <drm/drm_print.h>
 
 #include <asm/mach-ps2/gif.h>
 #include <asm/mach-ps2/gs-registers.h>
@@ -21,23 +22,38 @@
 
 #include "gs_drm.h"
 #include "gs_gem.h"
-#include "gs_tile.h"
 #include "gs_transfer.h"
+#include "gs_vram.h"
 
 #define GS_UPLOAD_MAX_QUADS 240
 
-static u32 gs_fb_psm(const struct drm_framebuffer *fb)
+/**
+ * gs_fourcc_to_psm - GS pixel storage mode for a DRM fourcc format
+ * @fourcc: DRM fourcc format
+ * @psm: resulting GS pixel storage mode
+ *
+ * Return: 0 on success, otherwise a negative error number
+ */
+int gs_fourcc_to_psm(u32 fourcc, enum gs_psm *psm)
 {
-	switch (fb->format->format) {
-	case DRM_FORMAT_RGBA5551:
-	case DRM_FORMAT_RGB565:
-		return gs_psm_ct16;
-	case DRM_FORMAT_RGBA8888:
-	case DRM_FORMAT_RGBX8888:
-	case DRM_FORMAT_BGRA8888:
+	switch (fourcc) {
+	case DRM_FORMAT_ABGR1555:
+	case DRM_FORMAT_XBGR1555:
+		*psm = gs_psm_ct16;
+		return 0;
+	case DRM_FORMAT_ABGR8888:
+	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_XRGB8888:	/* swizzled by gs_upload_fb() */
+		*psm = gs_psm_ct32;
+		return 0;
 	default:
-		return gs_psm_ct32;
+		return -EINVAL;
 	}
+}
+
+static int gs_fb_psm(const struct drm_framebuffer *fb, enum gs_psm *psm)
+{
+	return gs_fourcc_to_psm(fb->format->format, psm);
 }
 
 static u32 gs_fb_bpp(const struct drm_framebuffer *fb)
@@ -45,21 +61,59 @@ static u32 gs_fb_bpp(const struct drm_framebuffer *fb)
 	return fb->format->cpp[0] * 8;
 }
 
-static u32 gs_vram_page_addr(u32 offset)
+/*
+ * GS PSMCT32 stores A:B:G:R, which is DRM_FORMAT_ABGR8888. fbdev asks for
+ * DRM_FORMAT_XRGB8888, so swap red and blue while uploading its console
+ * buffer instead of exposing a BGR console.
+ */
+static bool gs_fb_swizzle_rb(const struct drm_framebuffer *fb)
 {
-	return offset / 2048;
+	return fb->format->format == DRM_FORMAT_XRGB8888;
+}
+
+static void gs_swizzle_rb32(u8 *dst, const u8 *src, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i + 4 <= len; i += 4) {
+		dst[i + 0] = src[i + 2];
+		dst[i + 1] = src[i + 1];
+		dst[i + 2] = src[i + 0];
+		dst[i + 3] = 0xff;
+	}
+}
+
+/**
+ * gs_fb_width - TRXREG aligned upload width
+ * @fb: framebuffer to upload
+ * @psm: pixel storage mode
+ *
+ * TRXREG width must be a multiple of 2 for PSMCT32 and a multiple of 4 for
+ * PSMCT16.
+ *
+ * Return: upload width in pixels
+ */
+static u32 gs_fb_width(const struct drm_framebuffer *fb, enum gs_psm psm)
+{
+	const u32 align = psm == gs_psm_ct16 ? 4 : 2;
+
+	return fb->width & ~(align - 1);
 }
 
 int gs_emit_upload(struct gs_device *gs,
 	struct drm_framebuffer *fb, u32 y, u32 x, u32 width,
 	const u8 *src, size_t len)
 {
-	union package *base = (union package *)gs->ps2par.package.buffer;
+	union package *base = (union package *)gs->package.buffer;
 	union package *package = base;
 	struct gs_gem_object *obj = to_gs_gem_obj(fb->obj[0]);
-	const u32 psm = gs_fb_psm(fb);
+	const u32 fbw = DIV_ROUND_UP(fb->width, GS_FB_PAGE_WIDTH);
 	const u32 qwc = len / sizeof(base->gif);
+	enum gs_psm psm;
 	size_t i;
+
+	if (gs_fb_psm(fb, &psm))
+		return -EINVAL;
 
 	if (!qwc || qwc > GS_UPLOAD_MAX_QUADS)
 		return -EINVAL;
@@ -73,11 +127,11 @@ int gs_emit_upload(struct gs_device *gs,
 	GIF_PACKAGE_AD(package) {
 		.addr = gs_addr_bitbltbuf,
 		.data.bitbltbuf = {
-			.dbp = gs_vram_page_addr(gs_vram_block_offset(obj->vram)),
-			.dbw = fb->width / GS_FB_PAGE_WIDTH,
+			.dbp = gs_vram_block_block(obj->vram),
+			.dbw = fbw,
 			.dpsm = psm,
 			.sbp = 0,
-			.sbw = fb->width / GS_FB_PAGE_WIDTH,
+			.sbw = fbw,
 			.spsm = psm
 		}
 	};
@@ -120,32 +174,56 @@ int gs_upload_fb(struct gs_device *gs, struct drm_framebuffer *fb)
 	struct drm_gem_shmem_object *shmem;
 	struct iosys_map map;
 	u32 width, height, bpp, rowbytes, x, y;
+	enum gs_psm psm;
+	bool swizzle;
+	u8 *tmp = NULL;
 	int err;
 
 	if (!gs || !fb || !fb->obj[0])
 		return -EINVAL;
 
+	err = gs_fb_psm(fb, &psm);
+	if (err)
+		return err;
+
 	obj = to_gs_gem_obj(fb->obj[0]);
 	shmem = &obj->base;
 
 	if (!obj->vram) {
-		obj->vram = gs_vram_alloc(&gs->vram,
-					  fb->pitches[0] * fb->height);
+		obj->vram = gs_vram_alloc(&gs->vram, psm,
+					  fb->width, fb->height);
 		if (IS_ERR(obj->vram)) {
 			err = PTR_ERR(obj->vram);
 			obj->vram = NULL;
 			return err;
 		}
+	} else if (!gs_vram_block_fits(obj->vram, psm,
+				       fb->width, fb->height)) {
+		DRM_ERROR("VRAM reservation is too small for %ux%u PSM %u\n",
+			  fb->width, fb->height, psm);
+		return -EINVAL;
 	}
 
 	bpp = gs_fb_bpp(fb);
-	width = fb->width & ~3u;	/* TRXREG width alignment */
+	width = gs_fb_width(fb, psm);
 	height = fb->height;
 	rowbytes = width * bpp / 8;
 
 	err = shmem->base.funcs->vmap(&shmem->base, &map);
 	if (err)
 		return err;
+
+	swizzle = gs_fb_swizzle_rb(fb);
+	if (swizzle) {
+		tmp = kmalloc(GS_UPLOAD_MAX_QUADS * 16, GFP_KERNEL);
+		if (!tmp) {
+			err = -ENOMEM;
+			goto out_unmap;
+		}
+	}
+
+	/* The GIF staging page is shared with validated submissions. */
+	mutex_lock(&gs->submit_lock);
 
 	for (y = 0; y < height; y++) {
 		const u8 *row = map.vaddr + y * fb->pitches[0];
@@ -159,14 +237,23 @@ int gs_upload_fb(struct gs_device *gs, struct drm_framebuffer *fb)
 			if (!len)
 				continue;
 
-			err = gs_emit_upload(gs, fb, y, 0, len * 8 / bpp,
-					      row + x, len);
+			if (swizzle) {
+				gs_swizzle_rb32(tmp, row + x, len);
+				err = gs_emit_upload(gs, fb, y, x * 8 / bpp,
+						     len * 8 / bpp, tmp, len);
+			} else {
+				err = gs_emit_upload(gs, fb, y, x * 8 / bpp,
+						     len * 8 / bpp, row + x, len);
+			}
 			if (err)
 				goto out;
 		}
 	}
 
 out:
+	mutex_unlock(&gs->submit_lock);
+out_unmap:
+	kfree(tmp);
 	shmem->base.funcs->vunmap(&shmem->base, &map);
 	return err;
 }
@@ -174,8 +261,12 @@ out:
 void gs_set_scanout(struct gs_device *gs, struct drm_framebuffer *fb)
 {
 	struct gs_gem_object *obj;
+	enum gs_psm psm;
 
 	if (!gs || !fb || !fb->obj[0])
+		return;
+
+	if (gs_fb_psm(fb, &psm))
 		return;
 
 	obj = to_gs_gem_obj(fb->obj[0]);
@@ -183,11 +274,10 @@ void gs_set_scanout(struct gs_device *gs, struct drm_framebuffer *fb)
 		return;
 
 	GS_WRITE_DISPFB1(
-		.fbp = gs_vram_page_addr(gs_vram_block_offset(obj->vram)),
-		.fbw = fb->width / GS_FB_PAGE_WIDTH,
-		.psm = gs_fb_psm(fb),
+		.fbp = gs_vram_block_page(obj->vram),
+		.fbw = DIV_ROUND_UP(fb->width, GS_FB_PAGE_WIDTH),
+		.psm = psm,
 		.dbx = 0,
 		.dby = 0
 	);
 }
-

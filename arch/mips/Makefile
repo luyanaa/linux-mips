@@ -40,6 +40,16 @@ else
 64bit-emul		= elf64btsmip
 endif
 
+#
+# The R5900 Emotion Engine binutils provide elf32lr5900 (o32) and
+# elf32lr5900n32 (n32), but not the generic elf32ltsmip emulation. The
+# PlayStation 2 port is an o32 32-bit kernel, so link with the o32 R5900
+# emulation.
+#
+ifdef CONFIG_CPU_R5900
+32bit-emul		= elf32lr5900
+endif
+
 ifdef CONFIG_32BIT
 tool-archpref		= $(32bit-tool-archpref)
 UTS_MACHINE		:= mips
