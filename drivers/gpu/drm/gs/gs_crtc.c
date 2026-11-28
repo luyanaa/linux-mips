@@ -12,6 +12,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_modeset_helper_vtables.h>
 #include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 
 #include <asm/mach-ps2/gs.h>
@@ -428,7 +429,8 @@ static void gs_atomic_flush(struct drm_crtc *crtc,
 		vm.hsync_len,
 		vm.vsync_len);
 
-	ps2fb_set_par(&vm);
+	if (drm_atomic_crtc_needs_modeset(crtc_state))
+		ps2fb_set_par(&vm);
 }
 
 static enum drm_mode_status gs_mode_valid(struct drm_crtc *crtc,

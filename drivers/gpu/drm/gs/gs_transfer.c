@@ -28,8 +28,16 @@
 
 static u32 gs_fb_psm(const struct drm_framebuffer *fb)
 {
-	return fb->format->format == DRM_FORMAT_RGBA5551 ?
-		gs_psm_ct16 : gs_psm_ct32;
+	switch (fb->format->format) {
+	case DRM_FORMAT_RGBA5551:
+	case DRM_FORMAT_RGB565:
+		return gs_psm_ct16;
+	case DRM_FORMAT_RGBA8888:
+	case DRM_FORMAT_RGBX8888:
+	case DRM_FORMAT_BGRA8888:
+	default:
+		return gs_psm_ct32;
+	}
 }
 
 static u32 gs_fb_bpp(const struct drm_framebuffer *fb)
